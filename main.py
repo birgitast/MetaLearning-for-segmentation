@@ -4,56 +4,227 @@ import torch.nn.functional as F
 
 import matplotlib.pyplot as plt
 
-from metalearners import ModelAgnosticMetaLearning
+from maml import ModelAgnosticMetaLearning
 from data import get_datasets, visualize, show_random_data
 from models import Unet
 
 import math
+import time
+import logging
+import os
+import json
 from collections import OrderedDict
 
 
+output_folder = "results"
+
 # data params
 dataset = 'Pascal5i'
+download_data = True
 path_to_dataset = "/home/birgit/MA/Code/data"
-ways = 1
-shots = 5
-batch_size = 16
+num_ways = 1
+num_shots = 5
+num_shots_test = 15
+batch_size = 2
+max_batches = 2
 
 # model params
 seg_threshold = 0.5
 learning_rate = 0.001
 first_order = True
 num_adaption_steps = 1
-step_size = 0.1
-device = "cpu"
+step_size = 0.4
+
+use_cuda = False
 
 
 # training params
 num_epochs = 1
 num_batches = 2
-verbose = True 
+verbose = False
 num_workers = 8
 
-loss_function = F.cross_entropy
+# test params
+config_path = '' # Path to the configuration file returned by `train.py`
 
+#loss_function = F.cross_entropy
+#loss_function = torch.nn.NLLLoss()
+loss_function = torch.nn.BCEWithLogitsLoss()
+#loss_function = torch.nn.CrossEntropyLoss()
 
 def main():
 
+    logging.basicConfig(level=logging.DEBUG if verbose else logging.INFO)
+    device = torch.device('cuda' if use_cuda
+                          and torch.cuda.is_available() else 'cpu')
+
+    if (output_folder is not None):
+        if not os.path.exists(output_folder):
+            os.makedirs(output_folder)
+            logging.debug('Creating folder `{0}`'.format(output_folder))
+
+        folder = os.path.join(output_folder,
+                              time.strftime('%Y-%m-%d_%H%M%S'))
+        os.makedirs(folder)
+        logging.debug('Creating folder `{0}`'.format(folder))
+
+        #path_to_dataset = os.path.abspath(path_to_dataset)
+        model_path = os.path.abspath(os.path.join(folder, 'model.th'))
+        print("------------------model path---------------------")
+        print(model_path)
+
+        config_dict = {'folder': path_to_dataset, 'dataset': dataset, 'output_folder': output_folder, 'num_ways': num_ways, 'num_shots': num_shots, 
+                        'num_shots_test': num_shots_test, 'batch_size': batch_size, 'num_adaption_steps': num_adaption_steps, 'num_epochs': num_epochs, 'num_batches': num_batches,
+                        'step_size': step_size, 'first_order': first_order, 'learning_rate': learning_rate, 'num_workers': num_workers, 'verbose': verbose,
+                        'use_cuda': use_cuda, 'model_path': model_path}
+
+        print(config_dict)
+
+        # Save the configuration in a config.json file
+        with open(os.path.join(folder, 'config.json'), 'w') as f:
+            json.dump(config_dict, f, indent=2)
+        logging.info('Saving configuration file in `{0}`'.format(
+                     os.path.abspath(os.path.join(folder, 'config.json'))))
+
+
+
+    
     # get datasets and load into meta learning format
-    meta_train_dataset, meta_val_dataset, meta_test_dataset = get_datasets(dataset, path_to_dataset, ways, shots)
+    meta_train_dataset, meta_val_dataset, meta_test_dataset = get_datasets(dataset, path_to_dataset, num_ways, num_shots, num_shots_test, download=download_data)
     meta_train_dataloader = BatchMetaDataLoader(meta_train_dataset,
+                                                batch_size=batch_size,
+                                                shuffle=True,
+                                                num_workers=num_workers,
+                                                pin_memory=True)
+
+    meta_val_dataloader = BatchMetaDataLoader(meta_val_dataset,
                                                 batch_size=batch_size,
                                                 shuffle=True,
                                                 num_workers=num_workers,
                                                 pin_memory=True)
     
 
-    show_random_data(meta_train_dataset)
+    #show_random_data(meta_train_dataset)
 
     model = Unet()    
-
     
-    for batch in meta_train_dataloader:
+
+
+    meta_optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
+    metalearner = ModelAgnosticMetaLearning(model,
+                                            meta_optimizer,
+                                            first_order=first_order,
+                                            num_adaptation_steps=num_adaption_steps,
+                                            step_size=step_size,
+                                            loss_function=loss_function,
+                                            device=device)
+
+    best_value = None
+
+    #dataloader_test(dataloader)
+    #print_test_param(model)
+
+    # Training loop
+    epoch_desc = 'Epoch {{0: <{0}d}}'.format(1 + int(math.log10(num_epochs)))
+    for epoch in range(num_epochs):
+        print("start epoch ", epoch+1)
+        metalearner.train(meta_train_dataloader,
+                          max_batches=max_batches,
+                          verbose=verbose,
+                          desc='Training',
+                          leave=False)
+        results = metalearner.evaluate(meta_val_dataloader,
+                                       max_batches=max_batches,
+                                       verbose=verbose,
+                                       desc=epoch_desc.format(epoch + 1))
+
+        # Save best model
+        if 'accuracies_after' in results:
+            if (best_value is None) or (best_value < results['accuracies_after']):
+                best_value = results['accuracies_after']
+                save_model = True
+        elif (best_value is None) or (best_value > results['mean_outer_loss']):
+            best_value = results['mean_outer_loss']
+            save_model = True
+        else:
+            save_model = False
+
+        if save_model and (output_folder is not None):
+            with open(model_path, 'wb') as f:
+                torch.save(model.state_dict(), f)
+
+    if hasattr(meta_train_dataset, 'close'):
+        meta_train_dataset.close()
+        meta_val_dataset.close()
+
+    print("end epoch ", epoch+1)
+
+    #print_test_param(model)
+
+
+
+
+
+
+
+    """
+    # Testing (just copied!)
+    path_to_config = '/home/birgit/MA/Code/torchmeta/gitlab/results/2020-09-25_160114/config.json'
+
+    with open(path_to_config, 'r') as f:
+        config = json.load(f)
+
+    print(config)
+    print("-----------------")
+
+
+    device = torch.device('cuda' if use_cuda
+                          and torch.cuda.is_available() else 'cpu')
+    test_model = Unet()
+
+
+    with open(config['model_path'], 'rb') as f:
+        test_model.load_state_dict(torch.load(f, map_location=device))
+
+
+    meta_test_dataloader = BatchMetaDataLoader(meta_test_dataset,
+                                                batch_size=config['batch_size'],
+                                                shuffle=True,
+                                                num_workers=config['num_workers'],
+                                                pin_memory=True)
+
+    dataloader_test(meta_test_dataloader)
+
+
+    metalearner = ModelAgnosticMetaLearning(test_model,
+                                            first_order=config['first_order'],
+                                            num_adaptation_steps=config['num_adaption_steps'],
+                                            step_size=config['step_size'],
+                                            loss_function=loss_function,
+                                            device=device)
+
+    results = metalearner.evaluate(meta_test_dataloader,
+                                   max_batches=config['num_batches'],
+                                   verbose=True,#config[verbose],
+                                   desc='Test')
+
+    # Save results
+    dirname = os.path.dirname(config['model_path'])
+    with open(os.path.join(dirname, 'results.json'), 'w') as f:
+        json.dump(results, f)"""
+
+
+
+
+
+
+
+
+
+
+
+def dataloader_test(dataloader):
+    for batch in dataloader:
 
         # dataloader test:
         train_inputs, train_targets, train_labels = batch["train"]
@@ -82,58 +253,16 @@ def main():
         break
 
 
-    
-    
-    # TODO: Training (just copied from https://github.com/tristandeleu/pytorch-meta)
-
-    """meta_optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
-    metalearner = ModelAgnosticMetaLearning(model,
-                                            meta_optimizer,
-                                            first_order=first_order,
-                                            num_adaptation_steps=num_adaption_steps,
-                                            step_size=step_size,
-                                            loss_function=loss_function,
-                                            device=device)
-
-    best_value = None
-    prob_map = torch.sigmoid(output[0]).detach()
-
-
-    # Training loop
-    epoch_desc = 'Epoch {{0: <{0}d}}'.format(1 + int(math.log10(num_epochs)))
-    for epoch in range(num_epochs):
-        metalearner.train(meta_train_dataloader,
-                          max_batches=num_batches,
-                          verbose=verbose,
-                          desc='Training',
-                          leave=False)
-        results = metalearner.evaluate(meta_val_dataloader,
-                                       max_batches=num_batches,
-                                       verbose=verbose,
-                                       desc=epoch_desc.format(epoch + 1))
-
-        # Save best model
-        if 'accuracies_after' in results:
-            if (best_value is None) or (best_value < results['accuracies_after']):
-                best_value = results['accuracies_after']
-                save_model = True
-        elif (best_value is None) or (best_value > results['mean_outer_loss']):
-            best_value = results['mean_outer_loss']
-            save_model = True
-        else:
-            save_model = False
-
-        if save_model and (args.output_folder is not None):
-            with open(args.model_path, 'wb') as f:
-                torch.save(benchmark.model.state_dict(), f)
-
-    if hasattr(benchmark.meta_train_dataset, 'close'):
-        benchmark.meta_train_dataset.close()
-        benchmark.meta_val_dataset.close()"""
+def print_test_param(model):
+    for name, param in model.named_parameters():
+        if param.requires_grad:
+            print(name, param.data)
+        break
 
 
 
 main()
+
 
 
 

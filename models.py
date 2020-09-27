@@ -45,7 +45,8 @@ class Unet(MetaModule):
         # final conv (without any concat)
         self.final = nn.Conv2d(filters[0], n_classes, 1)
 
-    def forward(self, inputs):
+    def forward(self, inputs, params):
+        #print("model forward")
         conv1 = self.conv1(inputs)
         maxpool1 = self.maxpool1(conv1)
 
@@ -66,6 +67,12 @@ class Unet(MetaModule):
         up1 = self.up_concat1(conv1, up2)
 
         final = self.final(up1)
+
+        for i in range(list(final.shape)[0]):
+            prob_map = torch.sigmoid(final[i])
+            #mask = prob_map > 0.5#seg_threshold
+            final[i] = prob_map
+        #print("end model forward")
 
         return final
 
