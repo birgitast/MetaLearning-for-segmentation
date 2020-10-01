@@ -34,3 +34,21 @@ class ToTensor1D(object):
 
     def __repr__(self):
         return self.__class__.__name__ + '()'
+
+from torchvision.transforms import Compose, Resize, ToTensor, Normalize
+import PIL
+
+
+class SegmentationPairTransformNorm(object):
+    # normalization: imagenet normalization! may need to be adjusted, maybe Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)) 
+    def __init__(self, target_size):
+        self.image_transform = Compose([Resize((target_size, target_size)), ToTensor()])#, Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])])
+        self.mask_transform = Compose([Resize((target_size, target_size),
+                                               interpolation=PIL.Image.NEAREST),
+                                       ToTensor()])#, Normalize([0.5], [0.5])])
+
+    def __call__(self, image, mask):
+        image = self.image_transform(image)
+        mask = self.mask_transform(mask)
+        return image, mask
+

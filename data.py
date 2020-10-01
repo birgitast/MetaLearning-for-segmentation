@@ -7,13 +7,15 @@ import matplotlib.pyplot as plt
 import numpy as np
 import random
 
+from maml_utils import SegmentationPairTransformNorm
+
 
 
 
 def get_datasets(name, folder, num_ways=1, num_shots=1, num_shots_test=None, shuffle=True, seed=None, download=False):
 
     # dataset_transform = ClassSplitter(shuffle=True, num_train_per_class=num_shots, num_test_per_class=num_shots_test))
-    transform = SegmentationPairTransform(256) # 252 works, OR set padding in convolution layer = 1 instead of 0 , OR padding=0 and add cropping to conv (like in original Paper)
+    transform = SegmentationPairTransformNorm(256) # 252 works, OR set padding in convolution layer = 1 instead of 0 , OR padding=0 and add cropping to conv (like in original Paper)
     if name =='Pascal5i':
         dataset_transform = ClassSplitter(shuffle=True,
                                       num_train_per_class=num_shots,
