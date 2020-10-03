@@ -21,6 +21,7 @@ class Unet(MetaModule):
         self.feature_scale = feature_scale
 
         filters = [64, 128, 256, 512, 1024]
+        #filters = [64, 128, 256, 512, 1024, 2048, 4096]
         filters = [int(x / self.feature_scale) for x in filters]
 
         # downsampling
@@ -36,13 +37,29 @@ class Unet(MetaModule):
         self.conv4 = unetConv2(filters[2], filters[3], self.is_batchnorm)
         self.maxpool4 = nn.MaxPool2d(kernel_size=2, stride=2)
 
+        """
+        self.conv5 = unetConv2(filters[3], filters[4], self.is_batchnorm)
+        self.maxpool5 = nn.MaxPool2d(kernel_size=2, stride=2)
+
+        self.conv6 = unetConv2(filters[4], filters[5], self.is_batchnorm)
+        self.maxpool6 = nn.MaxPool2d(kernel_size=2, stride=2)
+        """
+
         self.center = unetConv2(filters[3], filters[4], self.is_batchnorm)
 
         # upsampling
+        """
+        self.up_concat6 = unetUp(filters[6], filters[5], self.is_deconv)
+        self.up_concat5 = unetUp(filters[5], filters[4], self.is_deconv)
+        """
+
         self.up_concat4 = unetUp(filters[4], filters[3], self.is_deconv)
         self.up_concat3 = unetUp(filters[3], filters[2], self.is_deconv)
         self.up_concat2 = unetUp(filters[2], filters[1], self.is_deconv)
         self.up_concat1 = unetUp(filters[1], filters[0], self.is_deconv)
+
+
+
 
         # final conv (without any concat)
         self.final = MetaConv2d(filters[0], n_classes, kernel_size=1)
@@ -60,6 +77,8 @@ class Unet(MetaModule):
                     m.bias.data.zero_()"""
 
     def forward(self, inputs, params=None):
+        print("shape input ", inputs.shape)
+        
         conv1 = self.conv1(inputs)
         maxpool1 = self.maxpool1(conv1)
 
@@ -72,7 +91,23 @@ class Unet(MetaModule):
         conv4 = self.conv4(maxpool3)
         maxpool4 = self.maxpool4(conv4)
 
+        """
+        conv5 = self.conv5(maxpool4)
+        maxpool5 = self.maxpool5(conv5)
+        
+        conv6 = self.conv6(maxpool5)
+        maxpool6 = self.maxpool6(conv6)
+        
+        test = maxpool6[0][0].detach().unsqueeze(0)
+
+        """
+
         center = self.center(maxpool4)
+        
+        """
+        up6 = self.up_concat6(conv6, center)
+        up5 = self.up_concat5(conv5, up6)
+        """
 
         up4 = self.up_concat4(conv4, center)
         up3 = self.up_concat3(conv3, up4)
@@ -82,6 +117,20 @@ class Unet(MetaModule):
         final = self.final(up1)
         #final = F.log_softmax(final)
         final = torch.sigmoid(final)
+
+        from data import visualize
+        import matplotlib.pyplot as plt
+
+        """for i in range(inputs.shape[0]):
+            visualize(inputs[i] , "input " +str(i))"""
+        visualize(inputs[0] , "input ")
+        #visualize(test, "center")
+        visualize(final.detach()[0], "output")
+        plt.show()
+
+        print("max and min")
+        print(torch.max(final))
+        print(torch.min(final))
 
         """for i in range(list(final.shape)[0]):
             prob_map = torch.sigmoid(final[i])
@@ -109,28 +158,29 @@ class unetConv2(MetaModule):
 
         if is_batchnorm:
             
-            self.conv = MetaSequential(OrderedDict([
-            ('conv', MetaConv2d(in_channels, out_channels, kernel_size=kernel_size, stride=stride, padding=padding)),
+            self.double_conv = MetaSequential(OrderedDict([
+            ('conv1', MetaConv2d(in_channels, out_channels, kernel_size=kernel_size, stride=stride, padding=padding)),
             ('norm', nn.BatchNorm2d(out_channels)),# momentum=1.,track_running_stats=False)),
             ('relu', nn.ReLU()),
-            ('conv', MetaConv2d(in_channels, out_channels, kernel_size=kernel_size, stride=stride, padding=padding)),
+            ('conv2', MetaConv2d(out_channels, out_channels, kernel_size=kernel_size, stride=stride, padding=padding)),
             ('norm', nn.BatchNorm2d(out_channels)),# momentum=1.,track_running_stats=False)),
             ('relu', nn.ReLU())
             ]))
 
         else:
-            self.conv = MetaSequential(OrderedDict([
-            ('conv', MetaConv2d(in_channels, out_channels, kernel_size=kernel_size, stride=stride, padding=padding)),
+            self.double_conv = MetaSequential(OrderedDict([
+            ('conv1', MetaConv2d(in_channels, out_channels, kernel_size=kernel_size, stride=stride, padding=padding)),
             ('relu', nn.ReLU()),
-            ('conv', MetaConv2d(in_channels, out_channels, kernel_size=kernel_size, stride=stride, padding=padding)),
+            ('conv2', MetaConv2d(out_channels, out_channels, kernel_size=kernel_size, stride=stride, padding=padding)),
             ('relu', nn.ReLU())
             ]))
 
         # use the modules apply function to recursively apply the initialization
-        self.conv.apply(init_layers)
+        self.double_conv.apply(init_layers)
 
     def forward(self, inputs):
-        outputs = self.conv(inputs)
+
+        outputs = self.double_conv(inputs)
         return outputs
 
 
