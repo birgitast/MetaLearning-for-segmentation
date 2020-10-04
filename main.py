@@ -26,19 +26,21 @@ path_to_dataset = "/home/birgit/MA/Code/data"
 num_ways = 1
 num_shots = 5
 num_shots_test = 5
-batch_size = 1
+batch_size = 2
 #batch_size = 10
 max_batches = 2
 #max_batches = 200
 
 # model params
 seg_threshold = 0.5
-learning_rate = 0.001
+learning_rate = 0.01
 first_order = True
 num_adaption_steps = 1
+#alpha = 0.4 # inner step size
+#beta = 0.4 # outer step size
+
 step_size = 0.4
 
-#use_cuda = False
 use_cuda = True
 
 
@@ -110,7 +112,7 @@ def main():
     #show_random_data(meta_train_dataset)
     
     model = Unet()   
-    meta_optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
+    meta_optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)#, weight_decay=1e-5)
     #meta_optimizer = torch.optim.RMSprop(model.parameters(), lr=learning_rate, momentum = 0.99)
     metalearner = ModelAgnosticMetaLearning(model,
                                             meta_optimizer,
@@ -123,8 +125,7 @@ def main():
     best_value = None
 
     #dataloader_test(meta_train_dataloader)
-    #print('param before training:')
-    #print_test_param(model)
+
 
     # Training loop
     epoch_desc = 'Epoch {{0: <{0}d}}'.format(1 + int(math.log10(num_epochs)))
@@ -161,10 +162,6 @@ def main():
         meta_train_dataset.close()
         meta_val_dataset.close()
  
-
-    #print('param after training:')
-    #print_test_param(model)
-
 
     """print('---------------testing--------------------')
 

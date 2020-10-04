@@ -161,10 +161,15 @@ class ModelAgnosticMetaLearning(object):
             
             logits = self.model(inputs, params=params)
 
+            #probs = torch.sigmoid(logits)
+            #mask = probs > 0.5
+
             # needed for other losses than BCEWithLogitsLoss()
             #targets = torch.squeeze(targets, dim=1)
             #targets = targets.type(torch.LongTensor)
+
             inner_loss = self.loss_function(logits, targets)
+
             results['inner_losses'][step] = inner_loss.item()
             if (step == 0) and is_classification_task:
                 results['accuracy_before'] = compute_accuracy(logits, targets)
@@ -180,17 +185,15 @@ class ModelAgnosticMetaLearning(object):
     def train(self, dataloader, max_batches=500, verbose=True, **kwargs):
         print("start train---------------------------------------------------")
         with tqdm(total=max_batches, disable=False, **kwargs) as pbar:
-            for results in self.train_iter(dataloader, max_batches=max_batches):
-                #print(results.keys())
-                
+            for results in self.train_iter(dataloader, max_batches=max_batches):                
                 pbar.update(1)
                 postfix = {'loss': '{0:.4f}'.format(results['mean_outer_loss'])}
                 if 'accuracies_after' in results:
                     postfix['accuracy'] = '{0:.4f}'.format(
                         np.mean(results['accuracies_after']))
                 pbar.set_postfix(**postfix)
-                #print("mean outer loss: ", results["mean_outer_loss"])
-        print(results)
+                print("mean outer loss: ", results["mean_outer_loss"])
+        #print(results)
         print("end train------------------------------------------------------")
 
 
@@ -210,7 +213,7 @@ class ModelAgnosticMetaLearning(object):
                 if num_batches >= max_batches:
                     break
 
-                #print("training batch no ", num_batches)
+                print("training batch no ", num_batches)
 
                 if self.scheduler is not None:
                     self.scheduler.step(epoch=num_batches)
@@ -251,7 +254,6 @@ class ModelAgnosticMetaLearning(object):
         mean_results = {'mean_outer_loss': mean_outer_loss}
         if 'accuracies_after' in results:
             mean_results['accuracies_after'] = mean_accuracy
-        print(results)
         print("end evaluate--------------------------------------------------")
         return mean_results
 
@@ -264,14 +266,13 @@ class ModelAgnosticMetaLearning(object):
                 
                 if num_batches >= max_batches:
                     break
-                #print("evaluate batch no ", num_batches)
+                print("evaluate batch no ", num_batches)
 
                 batch = tensors_to_device(batch, device=self.device)
                 _, results = self.get_outer_loss(batch)
                 yield results
 
                 num_batches += 1
-                #break  #inserted
         #print("end evaluate_iter")
 
 MAML = ModelAgnosticMetaLearning
