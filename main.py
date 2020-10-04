@@ -25,9 +25,11 @@ path_to_dataset = "/home/birgit/MA/Code/data"
 #path_to_dataset = '/no_backups/d1364/data'
 num_ways = 1
 num_shots = 5
-num_shots_test = 15
+num_shots_test = 5
 batch_size = 1
+#batch_size = 10
 max_batches = 2
+#max_batches = 200
 
 # model params
 seg_threshold = 0.5
@@ -36,12 +38,13 @@ first_order = True
 num_adaption_steps = 1
 step_size = 0.4
 
-use_cuda = False
-#use_cuda = True
+#use_cuda = False
+use_cuda = True
 
 
 # training params
 num_epochs = 20
+#num_epochs = 80
 verbose = False
 num_workers = 8
 
@@ -105,7 +108,7 @@ def main():
     
 
     #show_random_data(meta_train_dataset)
-
+    
     model = Unet()   
     meta_optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
     #meta_optimizer = torch.optim.RMSprop(model.parameters(), lr=learning_rate, momentum = 0.99)

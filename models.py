@@ -77,18 +77,17 @@ class Unet(MetaModule):
                     m.bias.data.zero_()"""
 
     def forward(self, inputs, params=None):
-        print("shape input ", inputs.shape)
         
-        conv1 = self.conv1(inputs)
+        conv1 = self.conv1(inputs, params=self.get_subdict(params, 'conv1.double_conv'))
         maxpool1 = self.maxpool1(conv1)
 
-        conv2 = self.conv2(maxpool1)
+        conv2 = self.conv2(maxpool1, params=self.get_subdict(params, 'conv2.double_conv'))
         maxpool2 = self.maxpool2(conv2)
 
-        conv3 = self.conv3(maxpool2)
+        conv3 = self.conv3(maxpool2, params=self.get_subdict(params, 'conv3.double_conv'))
         maxpool3 = self.maxpool3(conv3)
 
-        conv4 = self.conv4(maxpool3)
+        conv4 = self.conv4(maxpool3, params=self.get_subdict(params, 'conv4.double_conv'))
         maxpool4 = self.maxpool4(conv4)
 
         """
@@ -102,40 +101,35 @@ class Unet(MetaModule):
 
         """
 
-        center = self.center(maxpool4)
+        center = self.center(maxpool4, params=self.get_subdict(params, 'center.double_conv'))
         
         """
         up6 = self.up_concat6(conv6, center)
         up5 = self.up_concat5(conv5, up6)
         """
 
-        up4 = self.up_concat4(conv4, center)
-        up3 = self.up_concat3(conv3, up4)
-        up2 = self.up_concat2(conv2, up3)
-        up1 = self.up_concat1(conv1, up2)
+        up4 = self.up_concat4(conv4, center, params=self.get_subdict(params, 'up_concat4.conv.double_conv'))
+        up3 = self.up_concat3(conv3, up4, params=self.get_subdict(params, 'up_concat3.conv.double_conv'))
+        up2 = self.up_concat2(conv2, up3, params=self.get_subdict(params, 'up_concat2.conv.double_conv'))
+        up1 = self.up_concat1(conv1, up2, params=self.get_subdict(params, 'up_concat1.conv.double_conv'))
 
-        final = self.final(up1)
+        final = self.final(up1, params=self.get_subdict(params, 'final'))
         #final = F.log_softmax(final)
         final = torch.sigmoid(final)
 
         from data import visualize
         import matplotlib.pyplot as plt
 
-        """for i in range(inputs.shape[0]):
-            visualize(inputs[i] , "input " +str(i))"""
-        visualize(inputs[0] , "input ")
-        #visualize(test, "center")
+
+        """visualize(inputs[0] , "input ")
         visualize(final.detach()[0], "output")
-        plt.show()
+        mask = final.detach()[0] > 0.5
+        visualize(mask, "mask")
+        plt.show()"""
 
-        print("max and min")
+        """print("max and min value in output")
         print(torch.max(final))
-        print(torch.min(final))
-
-        """for i in range(list(final.shape)[0]):
-            prob_map = torch.sigmoid(final[i])
-            #mask = prob_map > 0.5#seg_threshold
-            final[i] = prob_map"""
+        print(torch.min(final))"""
 
         return final
 
@@ -160,10 +154,10 @@ class unetConv2(MetaModule):
             
             self.double_conv = MetaSequential(OrderedDict([
             ('conv1', MetaConv2d(in_channels, out_channels, kernel_size=kernel_size, stride=stride, padding=padding)),
-            ('norm', nn.BatchNorm2d(out_channels)),# momentum=1.,track_running_stats=False)),
+            ('norm1', nn.BatchNorm2d(out_channels)),# momentum=1.,track_running_stats=False)),
             ('relu', nn.ReLU()),
             ('conv2', MetaConv2d(out_channels, out_channels, kernel_size=kernel_size, stride=stride, padding=padding)),
-            ('norm', nn.BatchNorm2d(out_channels)),# momentum=1.,track_running_stats=False)),
+            ('norm2', nn.BatchNorm2d(out_channels)),# momentum=1.,track_running_stats=False)),
             ('relu', nn.ReLU())
             ]))
 
@@ -178,9 +172,9 @@ class unetConv2(MetaModule):
         # use the modules apply function to recursively apply the initialization
         self.double_conv.apply(init_layers)
 
-    def forward(self, inputs):
+    def forward(self, inputs, params=None):
 
-        outputs = self.double_conv(inputs)
+        outputs = self.double_conv(inputs, params)
         return outputs
 
 
@@ -194,12 +188,13 @@ class unetUp(MetaModule):
         else:
             self.up = nn.UpsamplingBilinear2d(scale_factor=2)
 
-    def forward(self, inputs1, inputs2):
+    def forward(self, inputs1, inputs2, params=None):
+
         outputs2 = self.up(inputs2)
         offset = outputs2.size()[2] - inputs1.size()[2]
         padding = 2 * [offset // 2, offset // 2]
         outputs1 = F.pad(inputs1, padding)
-        return self.conv(torch.cat([outputs1, outputs2], 1))
+        return self.conv(torch.cat([outputs1, outputs2], 1), params)
 
 
 
