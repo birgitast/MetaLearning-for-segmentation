@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import random
 
-from maml_utils import SegmentationPairTransformNorm
+from utils import SegmentationPairTransformNorm
 
 
 
@@ -16,7 +16,7 @@ def get_datasets(name, folder, num_ways=1, num_shots=1, num_shots_test=None, shu
 
     # dataset_transform = ClassSplitter(shuffle=True, num_train_per_class=num_shots, num_test_per_class=num_shots_test))
     transform = SegmentationPairTransformNorm(256) # 252 works, OR set padding in convolution layer = 1 instead of 0 , OR padding=0 and add cropping to conv (like in original Paper)
-    if name =='Pascal5i':
+    if name =='pascal5i':
         dataset_transform = ClassSplitter(shuffle=True,
                                       num_train_per_class=num_shots,
                                       num_test_per_class=num_shots_test)
@@ -29,7 +29,7 @@ def get_datasets(name, folder, num_ways=1, num_shots=1, num_shots_test=None, shu
                                         meta_split='test', transform=transform, download=download)#, dataset_transform, class_augmentation, fold)
 
     else: 
-        print("not implemented")
+        raise NotImplementedError('Unknown dataset `{0}`.'.format(name))
 
     return meta_train_dataset, meta_val_dataset, meta_test_dataset
 

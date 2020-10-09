@@ -80,12 +80,12 @@ class Unet(MetaModule):
         import matplotlib.pyplot as plt
 
 
-        """visualize(inputs[0] , "input ")
+        visualize(inputs[0] , "input ")
         visualize(final.detach()[0], "output")
         prob_mask = torch.sigmoid(final)
         mask = prob_mask.detach()[0] > 0.5
         visualize(mask, "mask")
-        plt.show()"""
+        plt.show()
 
         return final
 

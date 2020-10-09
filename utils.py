@@ -52,3 +52,42 @@ class SegmentationPairTransformNorm(object):
         mask = self.mask_transform(mask)
         return image, mask
 
+
+
+def dataloader_test(dataloader, model=None):
+    for batch in dataloader:
+
+        # dataloader test:
+        train_inputs, train_targets, train_labels = batch["train"]
+        print('Train inputs shape: {0}'.format(train_inputs.shape))    # (batchsize, no of shots, channels = 3 (RGB), h, w)
+        print('Train targets shape: {0}'.format(train_targets.shape))  # (batchsize, no of shots, channels = 1, h, w)
+        print('Train labels shape: {0}'.format(train_labels.shape))    # (batch size, no of shots)
+
+        test_inputs, test_targets, test_labels = batch["test"]
+
+        label_idx = train_labels[0][0] - 6
+        #label = meta_train_dataset.dataset.labels[label_idx]
+        label = ''
+        print("label ", train_labels)
+        visualize(train_inputs[0][0], label + " input")
+        visualize(train_targets[0][0], label + " target")
+
+        if model:
+            # model test:
+            outputs = model(train_inputs[0])
+            print('Output shape: {0}'.format(outputs.shape))
+            output1 = outputs[0].detach()  
+            prob_map = torch.sigmoid(output1)
+            mask = prob_map > seg_threshold
+
+            visualize(output1, label + " model output")
+            visualize(mask, label + " model mask")
+            plt.show()
+        break
+
+
+def print_test_param(model):
+    for name, param in model.named_parameters():
+        if param.requires_grad:
+            print(name, param.data)
+        break

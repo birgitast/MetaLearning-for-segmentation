@@ -7,6 +7,7 @@ import matplotlib.pyplot as plt
 from maml import ModelAgnosticMetaLearning
 from data import get_datasets, visualize, show_random_data
 from models import Unet
+from utils import dataloader_test, print_test_param
 
 import math
 import time
@@ -16,109 +17,68 @@ import json
 from collections import OrderedDict
 
 
-output_folder = "results"
-
-# data params
-dataset = 'Pascal5i'
 download_data = True
-path_to_dataset = "/home/birgit/MA/Code/data"
-#path_to_dataset = '/no_backups/d1364/data'
-num_ways = 1
-num_shots = 5
-num_shots_test = 5
-batch_size = 2
-#batch_size = 10
-max_batches = 2
-#max_batches = 200
-
-# model params
-seg_threshold = 0.5
-learning_rate = 0.01
-first_order = True
-num_adaption_steps = 1
-#alpha = 0.4 # inner step size
-#beta = 0.4 # outer step size
-
-step_size = 0.4
-
-use_cuda = True
-
-
-# training params
-num_epochs = 20
-#num_epochs = 80
-verbose = False
-num_workers = 8
-
-# test params
-config_path = '' # Path to the configuration file returned by `train.py`
-
 
 #loss_function = torch.nn.NLLLoss()
 loss_function = torch.nn.BCEWithLogitsLoss()
 #loss_function = torch.nn.CrossEntropyLoss()
 
 
-
-def main():
-
-    logging.basicConfig(level=logging.DEBUG if verbose else logging.INFO)
-    device = torch.device('cuda' if use_cuda
+def main(args):
+    print(args.verbose)
+    logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO)
+    device = torch.device('cuda' if args.use_cuda
                           and torch.cuda.is_available() else 'cpu')
 
-    if (output_folder is not None):
-        if not os.path.exists(output_folder):
-            os.makedirs(output_folder)
-            logging.debug('Creating folder `{0}`'.format(output_folder))
+    if (args.output_folder is not None):
+        if not os.path.exists(args.output_folder):
+            os.makedirs(args.output_folder)
+            logging.debug('Creating folder `{0}`'.format(args.output_folder))
 
-        folder = os.path.join(output_folder,
+        output_folder = os.path.join(args.output_folder,
                               time.strftime('%Y-%m-%d_%H%M%S'))
-        os.makedirs(folder)
-        logging.debug('Creating folder `{0}`'.format(folder))
+        os.makedirs(output_folder)
+        logging.debug('Creating folder `{0}`'.format(output_folder))
 
-        #path_to_dataset = os.path.abspath(path_to_dataset)
-        model_path = os.path.abspath(os.path.join(folder, 'model.th'))
+        args.datafolder = os.path.abspath(args.datafolder)
+        args.model_path = os.path.abspath(os.path.join(output_folder, 'model.th'))
 
-        config_dict = {'folder': path_to_dataset, 'dataset': dataset, 'output_folder': output_folder, 'num_ways': num_ways, 'num_shots': num_shots, 
-                        'num_shots_test': num_shots_test, 'batch_size': batch_size, 'num_adaption_steps': num_adaption_steps, 'num_epochs': num_epochs,
-                        'step_size': step_size, 'first_order': first_order, 'learning_rate': learning_rate, 'num_workers': num_workers, 'verbose': verbose,
-                        'use_cuda': use_cuda, 'model_path': model_path}
 
         # Save the configuration in a config.json file
-        with open(os.path.join(folder, 'config.json'), 'w') as f:
-            json.dump(config_dict, f, indent=2)
+        with open(os.path.join(output_folder, 'config.json'), 'w') as f:
+            json.dump(vars(args), f, indent=2)
         logging.info('Saving configuration file in `{0}`'.format(
-                     os.path.abspath(os.path.join(folder, 'config.json'))))
+                     os.path.abspath(os.path.join(output_folder, 'config.json'))))
 
 
 
     
     # get datasets and load into meta learning format
-    meta_train_dataset, meta_val_dataset, meta_test_dataset = get_datasets(dataset, path_to_dataset, num_ways, num_shots, num_shots_test, download=download_data)
+    meta_train_dataset, meta_val_dataset, meta_test_dataset = get_datasets(args.dataset, args.datafolder, args.num_ways, args.num_shots, args.num_shots_test, download=download_data)
 
     meta_train_dataloader = BatchMetaDataLoader(meta_train_dataset,
-                                                batch_size=batch_size,
+                                                batch_size=args.batch_size,
                                                 shuffle=True,
-                                                num_workers=num_workers,
+                                                num_workers=args.num_workers,
                                                 pin_memory=True)
 
     meta_val_dataloader = BatchMetaDataLoader(meta_val_dataset,
-                                                batch_size=batch_size,
+                                                batch_size=args.batch_size,
                                                 shuffle=True,
-                                                num_workers=num_workers,
+                                                num_workers=args.num_workers,
                                                 pin_memory=True)
     
 
     #show_random_data(meta_train_dataset)
     
     model = Unet()   
-    meta_optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)#, weight_decay=1e-5)
+    meta_optimizer = torch.optim.Adam(model.parameters(), lr=args.meta_lr)#, weight_decay=1e-5)
     #meta_optimizer = torch.optim.RMSprop(model.parameters(), lr=learning_rate, momentum = 0.99)
     metalearner = ModelAgnosticMetaLearning(model,
                                             meta_optimizer,
-                                            first_order=first_order,
-                                            num_adaptation_steps=num_adaption_steps,
-                                            step_size=step_size,
+                                            first_order=args.first_order,
+                                            num_adaptation_steps=args.num_adaption_steps,
+                                            step_size=args.step_size,
                                             loss_function=loss_function,
                                             device=device)
 
@@ -128,33 +88,34 @@ def main():
 
 
     # Training loop
-    epoch_desc = 'Epoch {{0: <{0}d}}'.format(1 + int(math.log10(num_epochs)))
-    for epoch in range(num_epochs):
+    epoch_desc = 'Epoch {{0: <{0}d}}'.format(1 + int(math.log10(args.num_epochs)))
+    for epoch in range(args.num_epochs):
         print("start epoch ", epoch+1)
         metalearner.train(meta_train_dataloader,
-                          max_batches=max_batches,
-                          verbose=verbose,
+                          max_batches=args.num_batches,
+                          verbose=args.verbose,
                           desc='Training',
                           leave=False)
-        results = metalearner.evaluate(meta_val_dataloader,
-                                       max_batches=max_batches,
-                                       verbose=verbose,
-                                       desc=epoch_desc.format(epoch + 1))
+        if epoch%5==0:
+            results = metalearner.evaluate(meta_val_dataloader,
+                                            max_batches=args.num_batches,
+                                            verbose=args.verbose,
+                                            desc=epoch_desc.format(epoch + 1))
 
-        # Save best model
-        if 'accuracies_after' in results:
-            if (best_value is None) or (best_value < results['accuracies_after']):
-                best_value = results['accuracies_after']
+            # Save best model
+            if 'accuracies_after' in results:
+                if (best_value is None) or (best_value < results['accuracies_after']):
+                    best_value = results['accuracies_after']
+                    save_model = True
+            elif (best_value is None) or (best_value > results['mean_outer_loss']):
+                best_value = results['mean_outer_loss']
                 save_model = True
-        elif (best_value is None) or (best_value > results['mean_outer_loss']):
-            best_value = results['mean_outer_loss']
-            save_model = True
-        else:
-            save_model = False
+            else:
+                save_model = False
 
-        if save_model and (output_folder is not None):
-            with open(model_path, 'wb') as f:
-                torch.save(model.state_dict(), f)
+            if save_model and (args.output_folder is not None):
+                with open(args.model_path, 'wb') as f:
+                    torch.save(model.state_dict(), f)
         
         print("end epoch ", epoch+1)
 
@@ -163,72 +124,72 @@ def main():
         meta_val_dataset.close()
  
 
-    """print('---------------testing--------------------')
-
-
-    meta_test_dataloader = BatchMetaDataLoader(meta_test_dataset,
-                                                batch_size=batch_size,
-                                                shuffle=True,
-                                                num_workers=num_workers,
-                                                pin_memory=True)
-
-    path_to_config = '/home/birgit/MA/Code/torchmeta/gitlab/results/2020-09-28_165404/config.json'
-
-    with open(path_to_config, 'r') as f:
-        config = json.load(f)
-
-    test_model = Unet()
-
-    with open(config['model_path'], 'rb') as f:
-        test_model.load_state_dict(torch.load(f, map_location=device))
-
-    device = torch.device('cuda' if use_cuda
-                        and torch.cuda.is_available() else 'cpu')
-
-    dataloader_test(meta_train_dataloader, test_model)"""
 
 
 
-def dataloader_test(dataloader, model=None):
-    for batch in dataloader:
-
-        # dataloader test:
-        train_inputs, train_targets, train_labels = batch["train"]
-        print('Train inputs shape: {0}'.format(train_inputs.shape))    # (batchsize, no of shots, channels = 3 (RGB), h, w)
-        print('Train targets shape: {0}'.format(train_targets.shape))  # (batchsize, no of shots, channels = 1, h, w)
-        print('Train labels shape: {0}'.format(train_labels.shape))    # (batch size, no of shots)
-
-        test_inputs, test_targets, test_labels = batch["test"]
-
-        label_idx = train_labels[0][0] - 6
-        #label = meta_train_dataset.dataset.labels[label_idx]
-        label = ''
-        print("label ", train_labels)
-        visualize(train_inputs[0][0], label + " input")
-        visualize(train_targets[0][0], label + " target")
-
-        if model:
-            # model test:
-            outputs = model(train_inputs[0])
-            print('Output shape: {0}'.format(outputs.shape))
-            output1 = outputs[0].detach()  
-            prob_map = torch.sigmoid(output1)
-            mask = prob_map > seg_threshold
-
-            visualize(output1, label + " model output")
-            visualize(mask, label + " model mask")
-            plt.show()
-        break
 
 
-def print_test_param(model):
-    for name, param in model.named_parameters():
-        if param.requires_grad:
-            print(name, param.data)
-        break
 
 
-main()
+
+if __name__ == '__main__':
+    import argparse
+
+    parser = argparse.ArgumentParser('MAML')
+
+    # General
+    parser.add_argument('datafolder', type=str,
+        help='Path to the folder the data is downloaded to.')
+    parser.add_argument('--dataset', type=str,
+        choices=['pascal5i'], default='pascal5i',
+        help='Name of the dataset (default: pascal5i).')
+    parser.add_argument('--output-folder', type=str, default='results',
+        help='Path to the output folder to save the model.')
+    parser.add_argument('--num-ways', type=int, default=1,
+        help='Number of classes per task (N in "N-way", default: 1).')
+    parser.add_argument('--num-shots', type=int, default=5,
+        help='Number of training example per class (k in "k-shot", default: 5).')
+    parser.add_argument('--num-shots-test', type=int, default=15,
+        help='Number of test example per class. If negative, same as the number '
+        'of training examples `--num-shots` (default: 15).')
+
+    # Model
+    """parser.add_argument('--hidden-size', type=int, default=64,
+        help='Number of channels in each convolution layer of the VGG network '
+        '(default: 64).')"""
+
+    # Optimization
+    parser.add_argument('--batch-size', type=int, default=25,
+        help='Number of tasks in a batch of tasks (default: 25).')
+    parser.add_argument('--num-adaption-steps', type=int, default=1,
+        help='Number of fast adaptation steps, ie. gradient descent '
+        'updates (default: 1).')
+    parser.add_argument('--num-epochs', type=int, default=50,
+        help='Number of epochs of meta-training (default: 50).')
+    parser.add_argument('--num-batches', type=int, default=100,
+        help='Number of batch of tasks per epoch (default: 100).')
+    parser.add_argument('--step-size', type=float, default=0.1,
+        help='Size of the fast adaptation step, ie. learning rate in the '
+        'gradient descent update (default: 0.1).')
+    parser.add_argument('--first-order', action='store_true',
+        help='Use the first order approximation, do not use higher-order '
+        'derivatives during meta-optimization.')
+    parser.add_argument('--meta-lr', type=float, default=0.001,
+        help='Learning rate for the meta-optimizer (optimization of the outer '
+        'loss). The default optimizer is Adam (default: 1e-3).')
+
+    # Misc
+    parser.add_argument('--num-workers', type=int, default=1,
+        help='Number of workers to use for data-loading (default: 1).')
+    parser.add_argument('--verbose', action='store_true')
+    parser.add_argument('--use-cuda', action='store_true')
+
+    args = parser.parse_args()
+
+    if args.num_shots_test <= 0:
+        args.num_shots_test = args.num_shots
+
+main(args)
 
 
 
