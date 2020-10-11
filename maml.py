@@ -128,6 +128,7 @@ class ModelAgnosticMetaLearning(object):
                 step_size=self.step_size, first_order=self.first_order)
 
             results['inner_losses'][:, task_id] = adaptation_results['inner_losses']
+
             if is_classification_task:
                 results['accuracies_before'][task_id] = adaptation_results['accuracy_before']
 
@@ -184,6 +185,8 @@ class ModelAgnosticMetaLearning(object):
 
     def train(self, dataloader, max_batches=500, verbose=True, **kwargs):
         print("start train---------------------------------------------------")
+        sum_mean_losses = 0
+        iters = 0
         with tqdm(total=max_batches, disable=False, **kwargs) as pbar:
             for results in self.train_iter(dataloader, max_batches=max_batches):                
                 pbar.update(1)
@@ -193,8 +196,12 @@ class ModelAgnosticMetaLearning(object):
                         np.mean(results['accuracies_after']))
                 pbar.set_postfix(**postfix)
                 print("mean outer loss: ", results["mean_outer_loss"])
+                sum_mean_losses += results["mean_outer_loss"]
+                iters += 1
+        epoch_loss = sum_mean_losses/iters
         #print(results)
         print("end train------------------------------------------------------")
+        return epoch_loss
 
 
     def train_iter(self, dataloader, max_batches=500):
@@ -213,7 +220,7 @@ class ModelAgnosticMetaLearning(object):
                 if num_batches >= max_batches:
                     break
 
-                print("training batch no ", num_batches)
+                print("training batch no. ", num_batches)
 
                 if self.scheduler is not None:
                     self.scheduler.step(epoch=num_batches)
@@ -266,7 +273,7 @@ class ModelAgnosticMetaLearning(object):
                 
                 if num_batches >= max_batches:
                     break
-                print("evaluate batch no ", num_batches)
+                print("evaluate batch no. ", num_batches)
 
                 batch = tensors_to_device(batch, device=self.device)
                 _, results = self.get_outer_loss(batch)

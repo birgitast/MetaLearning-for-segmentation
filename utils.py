@@ -91,3 +91,15 @@ def print_test_param(model):
         if param.requires_grad:
             print(name, param.data)
         break
+
+
+def plot_errors(num_epochs, train_losses, val_losses, val_step_size, output_folder, save=True):
+    import matplotlib.pyplot as plt
+    plt.plot(range(0, num_epochs), train_losses, 'r--', label='Training Loss')
+    plt.plot(range(0, num_epochs, val_step_size), val_losses, 'b-', label='Validation Loss')
+    plt.ylim(0, None)
+    plt.legend(loc='upper right')
+    plt.title('Training Loss vs Validation Loss')
+    #plt.show()
+    if save:
+        plt.savefig(output_folder + '/losses.png')

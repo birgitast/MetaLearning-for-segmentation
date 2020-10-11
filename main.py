@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 from maml import ModelAgnosticMetaLearning
 from data import get_datasets, visualize, show_random_data
 from models import Unet
-from utils import dataloader_test, print_test_param
+from utils import dataloader_test, print_test_param, plot_errors
 
 import math
 import time
@@ -25,7 +25,7 @@ loss_function = torch.nn.BCEWithLogitsLoss()
 
 
 def main(args):
-    print(args.verbose)
+
     logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO)
     device = torch.device('cuda' if args.use_cuda
                           and torch.cuda.is_available() else 'cpu')
@@ -52,7 +52,6 @@ def main(args):
 
 
 
-    
     # get datasets and load into meta learning format
     meta_train_dataset, meta_val_dataset, meta_test_dataset = get_datasets(args.dataset, args.datafolder, args.num_ways, args.num_shots, args.num_shots_test, download=download_data)
 
@@ -89,18 +88,25 @@ def main(args):
 
     # Training loop
     epoch_desc = 'Epoch {{0: <{0}d}}'.format(1 + int(math.log10(args.num_epochs)))
+    train_losses = []
+    val_losses = []
+
     for epoch in range(args.num_epochs):
         print("start epoch ", epoch+1)
-        metalearner.train(meta_train_dataloader,
+        train_loss = metalearner.train(meta_train_dataloader,
                           max_batches=args.num_batches,
                           verbose=args.verbose,
                           desc='Training',
                           leave=False)
-        if epoch%5==0:
+        train_losses.append(train_loss)
+
+        if epoch%args.val_step_size == 0:
+
             results = metalearner.evaluate(meta_val_dataloader,
                                             max_batches=args.num_batches,
                                             verbose=args.verbose,
                                             desc=epoch_desc.format(epoch + 1))
+            val_losses.append(results["mean_outer_loss"])
 
             # Save best model
             if 'accuracies_after' in results:
@@ -118,6 +124,9 @@ def main(args):
                     torch.save(model.state_dict(), f)
         
         print("end epoch ", epoch+1)
+        
+    plot_errors(args.num_epochs, train_losses, val_losses, val_step_size=args.val_step_size, output_folder=output_folder, save=True)
+    
 
     if hasattr(meta_train_dataset, 'close'):
         meta_train_dataset.close()
@@ -183,6 +192,8 @@ if __name__ == '__main__':
         help='Number of workers to use for data-loading (default: 1).')
     parser.add_argument('--verbose', action='store_true')
     parser.add_argument('--use-cuda', action='store_true')
+    parser.add_argument('--val_step_size', type=int, default=5,
+        help='Number of epochs after which model is re-evaluated')
 
     args = parser.parse_args()
 
