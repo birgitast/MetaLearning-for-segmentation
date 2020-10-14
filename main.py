@@ -2,19 +2,21 @@ import torch
 from torchmeta.utils.data import BatchMetaDataLoader
 import torch.nn.functional as F
 
+import matplotlib
+matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 
 from maml import ModelAgnosticMetaLearning
-from data import get_datasets, visualize, show_random_data
+from data import get_datasets
 from models import Unet
-from utils import dataloader_test, print_test_param, plot_errors
+from utils import dataloader_test, print_test_param, plot_errors, visualize, show_random_data
 
-import math
-import time
-import logging
-import os
-import json
+import math, time
+
+import json, os, logging
+
 from collections import OrderedDict
+
 
 
 download_data = True
@@ -50,6 +52,8 @@ def main(args):
         logging.info('Saving configuration file in `{0}`'.format(
                      os.path.abspath(os.path.join(output_folder, 'config.json'))))
 
+    
+    
 
 
     # get datasets and load into meta learning format
@@ -67,6 +71,7 @@ def main(args):
                                                 num_workers=args.num_workers,
                                                 pin_memory=True)
     
+
 
     #show_random_data(meta_train_dataset)
     
@@ -91,22 +96,27 @@ def main(args):
     train_losses = []
     val_losses = []
 
+    start_time = time.time()
+
     for epoch in range(args.num_epochs):
-        print("start epoch ", epoch+1)
+        print('start epoch ', epoch+1)
+        print('start train---------------------------------------------------')
         train_loss = metalearner.train(meta_train_dataloader,
                           max_batches=args.num_batches,
                           verbose=args.verbose,
                           desc='Training',
                           leave=False)
+        print('end train---------------------------------------------------')
         train_losses.append(train_loss)
 
         if epoch%args.val_step_size == 0:
-
+            print('start evaluate-------------------------------------------------')
             results = metalearner.evaluate(meta_val_dataloader,
                                             max_batches=args.num_batches,
                                             verbose=args.verbose,
                                             desc=epoch_desc.format(epoch + 1))
-            val_losses.append(results["mean_outer_loss"])
+            val_losses.append(results['mean_outer_loss'])
+            print('end evaluate-------------------------------------------------')
 
             # Save best model
             if 'accuracies_after' in results:
@@ -123,8 +133,11 @@ def main(args):
                 with open(args.model_path, 'wb') as f:
                     torch.save(model.state_dict(), f)
         
-        print("end epoch ", epoch+1)
-        
+        print('end epoch ', epoch+1)
+
+    elapsed_time = time.time() - start_time
+    print('Finished after ', time.strftime("%H:%M:%S",time.gmtime(elapsed_time)))
+
     plot_errors(args.num_epochs, train_losses, val_losses, val_step_size=args.val_step_size, output_folder=output_folder, save=True)
     
 
@@ -200,7 +213,7 @@ if __name__ == '__main__':
     if args.num_shots_test <= 0:
         args.num_shots_test = args.num_shots
 
-main(args)
+    main(args)
 
 
 

@@ -76,15 +76,17 @@ class Unet(MetaModule):
 
         #final = torch.sigmoid(final)
 
-        from data import visualize
+        """from utils import visualize
+        import matplotlib
+        matplotlib.use('Agg')
         import matplotlib.pyplot as plt
 
 
-        """visualize(inputs[0] , "input ")
-        visualize(final.detach()[0], "output")
+        visualize(inputs[0] , 'input ')
+        visualize(final.detach()[0], 'output')
         prob_mask = torch.sigmoid(final)
         mask = prob_mask.detach()[0] > 0.5
-        visualize(mask, "mask")
+        visualize(mask, 'mask')
         plt.show()"""
 
         return final
