@@ -3,13 +3,13 @@ from torchmeta.utils.data import BatchMetaDataLoader
 import torch.nn.functional as F
 
 import matplotlib
-matplotlib.use('Agg')
+matplotlib.use('TkAgg')
 import matplotlib.pyplot as plt
 
 from maml import ModelAgnosticMetaLearning
 from data import get_datasets
 from models import Unet
-from utils import dataloader_test, print_test_param, plot_errors, visualize, show_random_data
+from utils import dataloader_test, print_test_param, plot_errors, plot_accuracy, visualize, show_random_data, DiceLoss
 
 import math, time
 
@@ -22,7 +22,8 @@ from collections import OrderedDict
 download_data = True
 
 #loss_function = torch.nn.NLLLoss()
-loss_function = torch.nn.BCEWithLogitsLoss()
+#loss_function = torch.nn.BCEWithLogitsLoss()
+loss_function = DiceLoss()
 #loss_function = torch.nn.CrossEntropyLoss()
 
 
@@ -95,19 +96,22 @@ def main(args):
     epoch_desc = 'Epoch {{0: <{0}d}}'.format(1 + int(math.log10(args.num_epochs)))
     train_losses = []
     val_losses = []
+    train_accuracies = []
+    val_accuracies = []
 
     start_time = time.time()
 
     for epoch in range(args.num_epochs):
         print('start epoch ', epoch+1)
         print('start train---------------------------------------------------')
-        train_loss = metalearner.train(meta_train_dataloader,
+        train_loss, train_accuracy = metalearner.train(meta_train_dataloader,
                           max_batches=args.num_batches,
                           verbose=args.verbose,
                           desc='Training',
                           leave=False)
         print('end train---------------------------------------------------')
         train_losses.append(train_loss)
+        train_accuracies.append(train_accuracy)
 
         if epoch%args.val_step_size == 0:
             print('start evaluate-------------------------------------------------')
@@ -116,6 +120,7 @@ def main(args):
                                             verbose=args.verbose,
                                             desc=epoch_desc.format(epoch + 1))
             val_losses.append(results['mean_outer_loss'])
+            val_accuracies.append(results['accuracy'])
             print('end evaluate-------------------------------------------------')
 
             # Save best model
@@ -138,7 +143,8 @@ def main(args):
     elapsed_time = time.time() - start_time
     print('Finished after ', time.strftime("%H:%M:%S",time.gmtime(elapsed_time)))
 
-    plot_errors(args.num_epochs, train_losses, val_losses, val_step_size=args.val_step_size, output_folder=output_folder, save=True)
+    plot_errors(args.num_epochs, train_losses, val_losses, val_step_size=1, output_folder=output_folder, save=True)
+    plot_accuracy(args.num_epochs, train_accuracies, val_accuracies, val_step_size=args.val_step_size, output_folder=output_folder, save=True)
     
 
     if hasattr(meta_train_dataset, 'close'):
@@ -205,7 +211,7 @@ if __name__ == '__main__':
         help='Number of workers to use for data-loading (default: 1).')
     parser.add_argument('--verbose', action='store_true')
     parser.add_argument('--use-cuda', action='store_true')
-    parser.add_argument('--val_step_size', type=int, default=5,
+    parser.add_argument('--val-step-size', type=int, default=5,
         help='Number of epochs after which model is re-evaluated')
 
     args = parser.parse_args()

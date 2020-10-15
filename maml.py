@@ -5,7 +5,7 @@ from tqdm import tqdm
 
 from collections import OrderedDict
 from torchmeta.utils import gradient_update_parameters
-from utils import tensors_to_device, compute_accuracy
+from utils import tensors_to_device, compute_accuracy, get_dice_score
 
 __all__ = ['ModelAgnosticMetaLearning', 'MAML', 'FOMAML']
 
@@ -118,6 +118,7 @@ class ModelAgnosticMetaLearning(object):
             })
 
         mean_outer_loss = torch.tensor(0., device=self.device)
+        mean_accuracy = 0
         for task_id, (train_inputs, train_targets, _, test_inputs, test_targets, _) \
                 in enumerate(zip(*batch['train'], *batch['test'])):
             #print('task_id: ', task_id)
@@ -138,11 +139,16 @@ class ModelAgnosticMetaLearning(object):
                 outer_loss = self.loss_function(test_logits, test_targets)
                 results['outer_losses'][task_id] = outer_loss.item()
                 mean_outer_loss += outer_loss
+
+                acc = get_dice_score(test_logits.detach(), test_targets).item()
+                mean_accuracy += acc
             if is_classification_task:
                 results['accuracies_after'][task_id] = compute_accuracy(
                     test_logits, test_targets)
             #print('end task')
         mean_outer_loss.div_(num_tasks)
+        mean_accuracy = mean_accuracy/num_tasks
+        results['accuracy'] = mean_accuracy
         results['mean_outer_loss'] = mean_outer_loss.item()
         #print('end outer loss')
 
@@ -185,21 +191,27 @@ class ModelAgnosticMetaLearning(object):
 
     def train(self, dataloader, max_batches=500, verbose=True, **kwargs):
         sum_mean_losses = 0
+        sum_mean_accuracies = 0
         iters = 0
         with tqdm(total=max_batches, disable=False, **kwargs) as pbar:
             for results in self.train_iter(dataloader, max_batches=max_batches):                
                 pbar.update(1)
                 postfix = {'loss': '{0:.4f}'.format(results['mean_outer_loss'])}
-                if 'accuracies_after' in results:
+                """if 'accuracies_after' in results:
                     postfix['accuracy'] = '{0:.4f}'.format(
-                        np.mean(results['accuracies_after']))
+                        np.mean(results['accuracies_after']))"""
+                if 'accuracy' in results:
+                    postfix['accuracy'] = '{0:.4f}'.format(
+                        np.mean(results['accuracy']))
                 pbar.set_postfix(**postfix)
                 #print('mean outer loss: ', results['mean_outer_loss'])
                 sum_mean_losses += results['mean_outer_loss']
+                sum_mean_accuracies += results['accuracy']
                 iters += 1
         epoch_loss = sum_mean_losses/iters
+        epoch_accuracy = sum_mean_accuracies/iters
         #print(results)
-        return epoch_loss
+        return epoch_loss, epoch_accuracy
 
 
     def train_iter(self, dataloader, max_batches=500):
@@ -249,15 +261,21 @@ class ModelAgnosticMetaLearning(object):
                 mean_outer_loss += (results['mean_outer_loss']
                     - mean_outer_loss) / count
                 postfix = {'loss': '{0:.4f}'.format(mean_outer_loss)}
-                if 'accuracies_after' in results:
+                """if 'accuracies_after' in results:
                     mean_accuracy += (np.mean(results['accuracies_after'])
+                        - mean_accuracy) / count
+                    postfix['accuracy'] = '{0:.4f}'.format(mean_accuracy)"""
+                if 'accuracy' in results:
+                    mean_accuracy += (np.mean(results['accuracy'])
                         - mean_accuracy) / count
                     postfix['accuracy'] = '{0:.4f}'.format(mean_accuracy)
                 pbar.set_postfix(**postfix)
 
         mean_results = {'mean_outer_loss': mean_outer_loss}
-        if 'accuracies_after' in results:
-            mean_results['accuracies_after'] = mean_accuracy
+        """if 'accuracies_after' in results:
+            mean_results['accuracies_after'] = mean_accuracy"""
+        if 'accuracy' in results:
+            mean_results['accuracy'] = mean_accuracy
         return mean_results
 
     def evaluate_iter(self, dataloader, max_batches=500):

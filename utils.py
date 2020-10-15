@@ -101,16 +101,31 @@ def print_test_param(model):
             print(name, param.data)
         break
 
+def plot_accuracy(num_epochs, train_acc, val_acc, val_step_size, output_folder, save=True):
+    plt.plot(range(0, num_epochs), train_acc, 'r--', label='Training Accuracy')
+    plt.plot(range(0, num_epochs, val_step_size), val_acc, 'b-', label='Validation Accuracy')
+    plt.ylim(0, 1)
+    plt.legend(loc='upper right')
+    plt.xlabel('Epochs')
+    plt.ylabel('Accuracy')
+    plt.title('Training Accuracy vs Validation Accuracy')
+    #plt.show()
+    if save:
+        plt.savefig(output_folder + '/accuracies.png')
+        plt.clf()
 
 def plot_errors(num_epochs, train_losses, val_losses, val_step_size, output_folder, save=True):
     plt.plot(range(0, num_epochs), train_losses, 'r--', label='Training Loss')
     plt.plot(range(0, num_epochs, val_step_size), val_losses, 'b-', label='Validation Loss')
-    plt.ylim(0, None)
+    plt.ylim(0, 1)
     plt.legend(loc='upper right')
+    plt.xlabel('Epochs')
+    plt.ylabel('Loss')
     plt.title('Training Loss vs Validation Loss')
     #plt.show()
     if save:
         plt.savefig(output_folder + '/losses.png')
+        plt.clf()
 
 
 
@@ -153,3 +168,52 @@ def load_random_sample(mask_path, jpeg_path):
     img = torch.unsqueeze(img, 0) 
 
     return img, mask
+
+
+def get_dice_score(pred, targets, smooth=1):
+        #comment out if your model contains a sigmoid or equivalent activation layer
+        pred = torch.sigmoid(pred)
+        # hard dice score:
+        #pred = (pred > 0.5).float()       
+        
+        #flatten label and prediction tensors
+        pred = pred.view(-1)
+        targets = targets.view(-1)
+        
+        intersection = (pred * targets).sum()                            
+        dice = (2.*intersection + smooth)/(pred.sum() + targets.sum() + smooth) 
+
+        return dice
+
+
+
+class DiceLoss(torch.nn.Module):
+    def __init__(self, weight=None, size_average=True):
+        super(DiceLoss, self).__init__()
+
+    def forward(self, inputs, targets, smooth=1):
+        
+        dice_score = get_dice_score(inputs, targets, smooth)
+        
+        return 1 - dice_score
+
+
+"""class DiceBCELoss(torch.nn.Module):
+    def __init__(self, weight=None, size_average=True):
+        super(DiceBCELoss, self).__init__()
+
+    def forward(self, inputs, targets, smooth=1):
+        
+        #comment out if your model contains a sigmoid or equivalent activation layer
+        inputs = torch.sigmoid(inputs)       
+        
+        #flatten label and prediction tensors
+        inputs = inputs.view(-1)
+        targets = targets.view(-1)
+        
+        intersection = (inputs * targets).sum()                            
+        dice_loss = 1 - (2.*intersection + smooth)/(inputs.sum() + targets.sum() + smooth)  
+        BCE = torch.nn.BCELoss(inputs, targets, reduction='mean')
+        Dice_BCE = BCE + dice_loss
+        
+        return Dice_BCE"""
