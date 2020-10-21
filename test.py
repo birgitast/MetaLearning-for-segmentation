@@ -20,7 +20,6 @@ def main(args):
 
     mask_path = '/home/birgit/MA/Code/data/pascal5i/Binary_map_aug/train/8'
     jpeg_path = '/home/birgit/MA/Code/data/pascal5i/VOCdevkit/VOC2012/JPEGImages'
-    
 
     with open(args.config, 'r') as f:
         config = json.load(f)
@@ -36,7 +35,7 @@ def main(args):
 
     rnd_img, rnd_mask = load_random_sample(mask_path, jpeg_path)
     
-
+    # TODO: model needs some adaptation steps first?
     output = model(rnd_img)
     prob_mask = torch.sigmoid(output)
     prediction = prob_mask.detach()[0] > 0.7
@@ -60,7 +59,7 @@ if __name__ == '__main__':
     parser.add_argument('--folder', type=int, default=None,
         help='Path to the folder the data is downloaded to. '
         '(default: path defined in configuration file).')
-    parser.add_argument('--use-cuda', action='store_true')
+    parser.add_argument('--use-cuda', action='store_true', default=True)
     
 
     args = parser.parse_args()

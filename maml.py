@@ -164,8 +164,10 @@ class ModelAgnosticMetaLearning(object):
         results = {'inner_losses': np.zeros(
             (num_adaptation_steps,), dtype=np.float32)}
 
+        mode = self.model.training
+        self.model.train(True)
         for step in range(num_adaptation_steps):
-            
+
             logits = self.model(inputs, params=params)
 
             #probs = torch.sigmoid(logits)
@@ -184,7 +186,7 @@ class ModelAgnosticMetaLearning(object):
             params = gradient_update_parameters(self.model, inner_loss,
                 step_size=step_size, params=params,
                 first_order=(not self.model.training) or first_order)
-            
+        self.model.train(mode)
         #print('end adapt')
 
         return params, results

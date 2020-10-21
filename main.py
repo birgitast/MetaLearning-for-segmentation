@@ -75,8 +75,8 @@ def main(args):
 
 
     #show_random_data(meta_train_dataset)
-    
-    model = Unet()   
+    model = Unet()
+    print(f'Using device: {device}')
     meta_optimizer = torch.optim.Adam(model.parameters(), lr=args.meta_lr)#, weight_decay=1e-5)
     #meta_optimizer = torch.optim.RMSprop(model.parameters(), lr=learning_rate, momentum = 0.99)
     metalearner = ModelAgnosticMetaLearning(model,
@@ -109,6 +109,7 @@ def main(args):
                           verbose=args.verbose,
                           desc='Training',
                           leave=False)
+        print(f'\n accuracy: {train_accuracy}, loss: {train_loss}')
         print('end train---------------------------------------------------')
         train_losses.append(train_loss)
         train_accuracies.append(train_accuracy)
@@ -121,6 +122,7 @@ def main(args):
                                             desc=epoch_desc.format(epoch + 1))
             val_losses.append(results['mean_outer_loss'])
             val_accuracies.append(results['accuracy'])
+            print(f'\n accuracy: {results["accuracy"]}, loss: {results["mean_outer_loss"]}')
             print('end evaluate-------------------------------------------------')
 
             # Save best model
@@ -199,7 +201,7 @@ if __name__ == '__main__':
     parser.add_argument('--step-size', type=float, default=0.1,
         help='Size of the fast adaptation step, ie. learning rate in the '
         'gradient descent update (default: 0.1).')
-    parser.add_argument('--first-order', action='store_true',
+    parser.add_argument('--first-order', action='store_true', default=True,
         help='Use the first order approximation, do not use higher-order '
         'derivatives during meta-optimization.')
     parser.add_argument('--meta-lr', type=float, default=0.001,
@@ -209,8 +211,8 @@ if __name__ == '__main__':
     # Misc
     parser.add_argument('--num-workers', type=int, default=1,
         help='Number of workers to use for data-loading (default: 1).')
-    parser.add_argument('--verbose', action='store_true')
-    parser.add_argument('--use-cuda', action='store_true')
+    parser.add_argument('--verbose', action='store_true', default=False)
+    parser.add_argument('--use-cuda', action='store_true', default=True)
     parser.add_argument('--val-step-size', type=int, default=5,
         help='Number of epochs after which model is re-evaluated')
 
