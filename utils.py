@@ -2,7 +2,7 @@ import torch
 
 import random
 import matplotlib
-matplotlib.use('Agg')
+matplotlib.use('TkAgg')
 import matplotlib.pyplot as plt
 
 import numpy as np
@@ -53,8 +53,7 @@ class SegmentationPairTransformNorm(object):
     def __init__(self, target_size):
         self.image_transform = Compose([Resize((target_size, target_size)), ToTensor()])#, Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])])
         self.mask_transform = Compose([Resize((target_size, target_size),
-                                               interpolation=PIL.Image.NEAREST),
-                                       ToTensor()])#, Normalize([0.5], [0.5])])
+                                               interpolation=PIL.Image.NEAREST), ToTensor()])#, Normalize([0.5], [0.5])])
 
     def __call__(self, image, mask):
         image = self.image_transform(image)
@@ -78,34 +77,41 @@ def dataloader_test(dataloader, model=None):
         #label = meta_train_dataset.dataset.labels[label_idx]
         label = ''
         print('label ', train_labels)
-        visualize(train_inputs[0][0], label + ' input')
-        visualize(train_targets[0][0], label + ' target')
+        print('label ', train_labels[0])
+        print('label ', train_labels[0][0])
+        #visualize(train_inputs[0][0], label + ' input')
+        #visualize(train_targets[0][0], label + ' target')
+        visualize([train_inputs[0][0], train_targets[0][0]])
+        plt.show()
+
 
         if model:
             # model test:
+            seg_threshold=0.6
             outputs = model(train_inputs[0])
             print('Output shape: {0}'.format(outputs.shape))
             output1 = outputs[0].detach()  
             prob_map = torch.sigmoid(output1)
             mask = (prob_map > seg_threshold).float()
 
-            visualize(output1, label + ' model output')
-            visualize(mask, label + ' model mask')
+            #visualize(output1, label + ' model output')
+            #visualize(mask, label + ' model mask')
+            visualize([train_inputs[0][0], output1, mask])
             plt.show()
         break
 
 
 def print_test_param(model):
     for name, param in model.named_parameters():
-        if param.requires_grad:
-            print(name, param.data)
+        #if param.requires_grad:
+        print(name, param.data)
         break
-
+        
 def plot_accuracy(num_epochs, train_acc, val_acc, val_step_size, output_folder, save=True):
     plt.plot(range(0, num_epochs), train_acc, 'r--', label='Training Accuracy')
     plt.plot(range(0, num_epochs, val_step_size), val_acc, 'b-', label='Validation Accuracy')
     plt.ylim(0, 1)
-    plt.legend(loc='upper right')
+    plt.legend(loc='lower right')
     plt.xlabel('Epochs')
     plt.ylabel('Accuracy')
     plt.title('Training Accuracy vs Validation Accuracy')
@@ -132,12 +138,20 @@ def plot_errors(num_epochs, train_losses, val_losses, val_step_size, output_fold
 # plot a given image tensor
 def visualize(tensor, class_name=None):
 
-    img = tensor.permute(1, 2, 0)
-    img = img.numpy()
+    if type(tensor)!=list:
+        img = tensor.permute(1, 2, 0)
+        img = img.numpy()
 
-    plt.figure()
-    plt.title(class_name)
-    plt.imshow(img)
+        plt.figure()
+        plt.title(class_name)
+        plt.imshow(img)
+
+    else:    
+        fig, axes = plt.subplots(1, len(tensor))
+        for i in range(len(tensor)):
+            img = tensor[i].permute(1, 2, 0)
+            img = img.numpy()
+            axes[i].imshow(img)
 
 
 
@@ -157,15 +171,27 @@ def show_random_data(meta_train_dataset):
 
 
 
-def load_random_sample(mask_path, jpeg_path):
+def load_random_samples(mask_path, jpeg_path):#, num_shots):
     import os
     
+    """rnd_names = random.choices([x for x in os.listdir(mask_path) if os.path.isfile(os.path.join(mask_path, x))], k=num_shots+1)
+    rnd_masks = [Image.open(mask_path + '/' + name) for name in rnd_names]
+    rnd_imgs = [Image.open(jpeg_path + '/' + name[0:11]+'.jpg') for name in rnd_names]
+    tensor_transform = SegmentationPairTransformNorm(256)
+    imgs=[]
+    masks=[]
+    for i in range(len(rnd_names)):
+        img, mask = tensor_transform(rnd_imgs[i], rnd_masks[i])
+        img = torch.unsqueeze(img, 0)
+        imgs.append(img)
+        masks.append(mask)"""
+     
     rnd_name = random.choice([x for x in os.listdir(mask_path) if os.path.isfile(os.path.join(mask_path, x))])
     rnd_mask = Image.open(mask_path + '/' + rnd_name)
     rnd_img = Image.open(jpeg_path + '/' + rnd_name[0:11]+'.jpg')
     tensor_transform = SegmentationPairTransformNorm(256)
     img, mask = tensor_transform(rnd_img, rnd_mask)
-    img = torch.unsqueeze(img, 0) 
+    img = torch.unsqueeze(img, 0)
 
     return img, mask
 
@@ -217,3 +243,4 @@ class DiceLoss(torch.nn.Module):
         Dice_BCE = BCE + dice_loss
         
         return Dice_BCE"""
+        
