@@ -144,7 +144,7 @@ def main(args):
         print('end epoch ', epoch+1)
 
     elapsed_time = time.time() - start_time
-    print('Finished after ', time.strftime('%H:%M:%S'F,time.gmtime(elapsed_time)))
+    print('Finished after ', time.strftime('%H:%M:%S',time.gmtime(elapsed_time)))
 
     plot_errors(args.num_epochs, train_losses, val_losses, val_step_size=args.val_step_size, output_folder=output_folder, save=True)
     plot_accuracy(args.num_epochs, train_accuracies, val_accuracies, val_step_size=args.val_step_size, output_folder=output_folder, save=True)
