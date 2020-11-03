@@ -3,7 +3,7 @@ from torchmeta.utils.data import BatchMetaDataLoader
 import torch.nn.functional as F
 
 import matplotlib
-matplotlib.use('TkAgg')
+matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 
 from maml import ModelAgnosticMetaLearning
@@ -58,7 +58,7 @@ def main(args):
 
 
     # get datasets and load into meta learning format
-    meta_train_dataset, meta_val_dataset, meta_test_dataset = get_datasets(args.dataset, args.datafolder, args.num_ways, args.num_shots, args.num_shots_test, download=download_data)
+    meta_train_dataset, meta_val_dataset, meta_test_dataset = get_datasets(args.dataset, args.datafolder, args.num_ways, args.num_shots, args.num_shots_test, fold=3, download=download_data)
 
     meta_train_dataloader = BatchMetaDataLoader(meta_train_dataset,
                                                 batch_size=args.batch_size,
@@ -75,8 +75,10 @@ def main(args):
 
 
     #show_random_data(meta_train_dataset)
-    
+
     model = Unet()   
+    print(f'Using device: {device}')
+
     meta_optimizer = torch.optim.Adam(model.parameters(), lr=args.meta_lr)#, weight_decay=1e-5)
     #meta_optimizer = torch.optim.RMSprop(model.parameters(), lr=learning_rate, momentum = 0.99)
     metalearner = ModelAgnosticMetaLearning(model,
@@ -109,6 +111,7 @@ def main(args):
                           verbose=args.verbose,
                           desc='Training',
                           leave=False)
+        print(f'\n accuracy: {train_accuracy}, loss: {train_loss}')
         print('end train---------------------------------------------------')
         train_losses.append(train_loss)
         train_accuracies.append(train_accuracy)
@@ -141,9 +144,9 @@ def main(args):
         print('end epoch ', epoch+1)
 
     elapsed_time = time.time() - start_time
-    print('Finished after ', time.strftime("%H:%M:%S",time.gmtime(elapsed_time)))
+    print('Finished after ', time.strftime('%H:%M:%S'F,time.gmtime(elapsed_time)))
 
-    plot_errors(args.num_epochs, train_losses, val_losses, val_step_size=1, output_folder=output_folder, save=True)
+    plot_errors(args.num_epochs, train_losses, val_losses, val_step_size=args.val_step_size, output_folder=output_folder, save=True)
     plot_accuracy(args.num_epochs, train_accuracies, val_accuracies, val_step_size=args.val_step_size, output_folder=output_folder, save=True)
     
 
@@ -182,9 +185,9 @@ if __name__ == '__main__':
         'of training examples `--num-shots` (default: 15).')
 
     # Model
-    """parser.add_argument('--hidden-size', type=int, default=64,
-        help='Number of channels in each convolution layer of the VGG network '
-        '(default: 64).')"""
+    parser.add_argument('--feature-scale', type=int, default=4,
+        help='Scaling of number of feature maps '
+        '(default: 4).')
 
     # Optimization
     parser.add_argument('--batch-size', type=int, default=25,
@@ -199,7 +202,7 @@ if __name__ == '__main__':
     parser.add_argument('--step-size', type=float, default=0.1,
         help='Size of the fast adaptation step, ie. learning rate in the '
         'gradient descent update (default: 0.1).')
-    parser.add_argument('--first-order', action='store_true',
+    parser.add_argument('--first-order', action='store_true', default=True,
         help='Use the first order approximation, do not use higher-order '
         'derivatives during meta-optimization.')
     parser.add_argument('--meta-lr', type=float, default=0.001,
@@ -209,8 +212,8 @@ if __name__ == '__main__':
     # Misc
     parser.add_argument('--num-workers', type=int, default=1,
         help='Number of workers to use for data-loading (default: 1).')
-    parser.add_argument('--verbose', action='store_true')
-    parser.add_argument('--use-cuda', action='store_true')
+    parser.add_argument('--verbose', action='store_true', default=False)
+    parser.add_argument('--use-cuda', action='store_true', default=True)
     parser.add_argument('--val-step-size', type=int, default=5,
         help='Number of epochs after which model is re-evaluated')
 

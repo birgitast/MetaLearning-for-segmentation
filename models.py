@@ -76,19 +76,7 @@ class Unet(MetaModule):
 
         #final = torch.sigmoid(final)
 
-        """from utils import visualize
-        import matplotlib
-        matplotlib.use('Agg')
-        import matplotlib.pyplot as plt
-
-
-        visualize(inputs[0] , 'input ')
-        visualize(final.detach()[0], 'output')
-        prob_mask = torch.sigmoid(final)
-        mask = prob_mask.detach()[0] > 0.5
-        visualize(mask, 'mask')
-        plt.show()"""
-
+    
         return final
 
 
@@ -114,17 +102,21 @@ class unetConv2(MetaModule):
             ('conv1', MetaConv2d(in_channels, out_channels, kernel_size=kernel_size, stride=stride, padding=padding)),
             ('norm1', nn.BatchNorm2d(out_channels)),# momentum=1.,track_running_stats=False)),
             ('relu1', nn.ReLU(inplace=True)),
+            #('dropout1', nn.Dropout(0.1)),
             ('conv2', MetaConv2d(out_channels, out_channels, kernel_size=kernel_size, stride=stride, padding=padding)),
             ('norm2', nn.BatchNorm2d(out_channels)),# momentum=1.,track_running_stats=False)),
             ('relu2', nn.ReLU(inplace=True))
+            #('dropout2', nn.Dropout(0.1))
             ]))
 
         else:
             self.double_conv = MetaSequential(OrderedDict([
             ('conv1', MetaConv2d(in_channels, out_channels, kernel_size=kernel_size, stride=stride, padding=padding)),
             ('relu1', nn.ReLU(inplace=True)),
+            #('dropout1', nn.Dropout(0.1)),
             ('conv2', MetaConv2d(out_channels, out_channels, kernel_size=kernel_size, stride=stride, padding=padding)),
             ('relu2', nn.ReLU(inplace=True))
+            #('dropout2', nn.Dropout(0.1))
             ]))
 
         # use the modules apply function to recursively apply the initialization

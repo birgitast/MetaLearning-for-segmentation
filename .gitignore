@@ -1,3 +1,7 @@
 __pycache__/
 results/
 *.png
+data/
+test2.py
+requirement.txt
+test3.py
