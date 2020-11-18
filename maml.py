@@ -5,10 +5,10 @@ from tqdm import tqdm
 
 from collections import OrderedDict
 from torchmeta.utils import gradient_update_parameters
-from utils import tensors_to_device, compute_accuracy, get_dice_score, visualize
+from utils import tensors_to_device, compute_accuracy, get_dice_score, jaccard_idx, visualize
 
 import matplotlib
-matplotlib.use('TkAgg')
+matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 
 __all__ = ['ModelAgnosticMetaLearning', 'MAML', 'FOMAML']
@@ -122,11 +122,13 @@ class ModelAgnosticMetaLearning(object):
             })
         if is_test:
             results.update({
-                'acc_dict': {k: [] for k in range(20)}
+                'acc_dict': {k: [] for k in range(20)},
+                'iou_dict': {k: [] for k in range(20)}
             })
 
         mean_outer_loss = torch.tensor(0., device=self.device)
         mean_accuracy = 0
+        mean_iou = 0
         
         for task_id, (train_inputs, train_targets, labels, test_inputs, test_targets, _) \
                 in enumerate(zip(*batch['train'], *batch['test'])):
@@ -150,16 +152,21 @@ class ModelAgnosticMetaLearning(object):
                 mean_outer_loss += outer_loss
 
                 acc = get_dice_score(test_logits.detach(), test_targets).item()
+                iou = jaccard_idx(test_targets, test_logits.detach()).item()
                 mean_accuracy += acc
+                mean_iou += iou
             if is_classification_task:
                 results['accuracies_after'][task_id] = compute_accuracy(
                     test_logits, test_targets)
             if is_test:
                 results['acc_dict'][labels[0].item()-1] = [acc]
+                results['iou_dict'][labels[0].item()-1] = [iou]
             #print('end task')
         mean_outer_loss.div_(num_tasks)
         mean_accuracy = mean_accuracy/num_tasks
+        mean_iou = mean_iou/num_tasks
         results['accuracy'] = mean_accuracy
+        results['iou'] = mean_iou
         results['mean_outer_loss'] = mean_outer_loss.item()
         #print('end outer loss')
 
@@ -169,9 +176,9 @@ class ModelAgnosticMetaLearning(object):
         visualize(final.detach()[0], 'output')
         visualize(mask, 'mask')"""
         prob_mask = torch.sigmoid(final)
-        mask = prob_mask.detach()[0] > 0.5
-        visualize([test_inputs[0], final.detach()[0], mask, test_targets[0]])
-        plt.show()
+        mask = prob_mask.detach()[0] > 0.6
+        #visualize([test_inputs[0], final.detach()[0], mask, test_targets[0]])
+        #plt.show()
 
 
         return mean_outer_loss, results
@@ -218,6 +225,7 @@ class ModelAgnosticMetaLearning(object):
     def train(self, dataloader, max_batches=500, verbose=True, **kwargs):
         sum_mean_losses = 0
         sum_mean_accuracies = 0
+        sum_mean_iou = 0
         iters = 0
         with tqdm(total=max_batches, disable=False, **kwargs) as pbar:
             for results in self.train_iter(dataloader, max_batches=max_batches):                
@@ -233,11 +241,13 @@ class ModelAgnosticMetaLearning(object):
                 #print('mean outer loss: ', results['mean_outer_loss'])
                 sum_mean_losses += results['mean_outer_loss']
                 sum_mean_accuracies += results['accuracy']
+                sum_mean_iou += results['iou']
                 iters += 1
         epoch_loss = sum_mean_losses/iters
         epoch_accuracy = sum_mean_accuracies/iters
+        epoch_iou = sum_mean_iou/iters
         #print(results)
-        return epoch_loss, epoch_accuracy
+        return epoch_loss, epoch_accuracy, epoch_iou
 
 
     def train_iter(self, dataloader, max_batches=500):
@@ -279,8 +289,9 @@ class ModelAgnosticMetaLearning(object):
 
 
     def evaluate(self, dataloader, max_batches=500, verbose=True, is_test=False, **kwargs):
-        mean_outer_loss, mean_accuracy, count = 0., 0., 0
+        mean_outer_loss, mean_accuracy, mean_iou, count = 0., 0., 0., 0
         acc_dict = {k: [] for k in range(20)}
+        iou_dict = {k: [] for k in range(20)}
         with tqdm(total=max_batches, disable=False, **kwargs) as pbar:
             for results in self.evaluate_iter(dataloader, max_batches=max_batches, is_test=is_test):
                 pbar.update(1)
@@ -296,6 +307,9 @@ class ModelAgnosticMetaLearning(object):
                     mean_accuracy += (np.mean(results['accuracy'])
                         - mean_accuracy) / count
                     postfix['accuracy'] = '{0:.4f}'.format(mean_accuracy)
+                if 'iou' in results:
+                    mean_iou += (np.mean(results['iou'])
+                        - mean_iou) / count
                 pbar.set_postfix(**postfix)
 
 
@@ -303,6 +317,10 @@ class ModelAgnosticMetaLearning(object):
                     for key, value in results['acc_dict'].items():
                         if value:
                                 acc_dict[key].extend(value)
+                if 'iou_dict'in results:
+                    for key, value in results['iou_dict'].items():
+                        if value:
+                                iou_dict[key].extend(value)
 
 
         mean_results = {'mean_outer_loss': mean_outer_loss}
@@ -310,6 +328,8 @@ class ModelAgnosticMetaLearning(object):
             mean_results['accuracies_after'] = mean_accuracy"""
         if 'accuracy' in results:
             mean_results['accuracy'] = mean_accuracy
+        if 'iou' in results:
+            mean_results['iou'] = mean_iou
         if 'acc_dict'in results:
             mean_acc_per_label = {}
             for key, value in acc_dict.items():
@@ -318,6 +338,14 @@ class ModelAgnosticMetaLearning(object):
                 else:
                     mean_acc_per_label[key] = 0
             mean_results['mean_acc_per_label'] =  mean_acc_per_label
+        if 'iou_dict'in results:
+            mean_iou_per_label = {}
+            for key, value in iou_dict.items():
+                if value:
+                    mean_iou_per_label[key] = sum(value)/len(value)
+                else:
+                    mean_iou_per_label[key] = 0
+            mean_results['mean_iou_per_label'] =  mean_iou_per_label
         return mean_results
 
     def evaluate_iter(self, dataloader, max_batches=500, is_test=False):

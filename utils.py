@@ -2,7 +2,7 @@ import torch
 
 import random
 import matplotlib
-matplotlib.use('TkAgg')
+matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 
 import numpy as np
@@ -133,6 +133,19 @@ def plot_errors(num_epochs, train_losses, val_losses, val_step_size, output_fold
         plt.savefig(output_folder + '/losses.png')
         plt.clf()
 
+def plot_iou(num_epochs, train_iou, val_iou, val_step_size, output_folder, save=True):
+    plt.plot(range(0, num_epochs), train_iou, 'r--', label='Training IoU')
+    plt.plot(range(0, num_epochs, val_step_size), val_iou, 'b-', label='Validation IoU')
+    plt.ylim(0, 1)
+    plt.legend(loc='lower right')
+    plt.xlabel('Epochs')
+    plt.ylabel('IoU')
+    plt.title('Training IoU vs Validation IoU')
+    #plt.show()
+    if save:
+        plt.savefig(output_folder + '/iou.png')
+        plt.clf()
+
 
 
 # plot a given image tensor
@@ -211,6 +224,58 @@ def get_dice_score(pred, targets, smooth=1):
 
         return dice
 
+"""# get intersection over union
+def iou(prediction, target):
+    scores = []
+    for i in range(prediction.shape[0]):
+        '''lbl = labels.cpu().numpy().reshape(-1)
+        target = output.cpu().numpy().reshape(-1)
+        from sklearn.metrics import jaccard_similarity_score as jsc
+        iou_score = jsc(target,lbl)'''
+
+        intersection = np.logical_and(target[i], prediction[i]])
+        union = np.logical_or(target[i], prediction[i])
+        iou_score = np.sum(intersection) / np.sum(union)
+        scores.append(iou_score)
+
+    return np.mean(scores)"""
+
+# from https://github.com/kevinzakka/pytorch-goodies/blob/master/losses.py
+def jaccard_idx(true, logits, eps=1e-7):
+    """Computes the Jaccard loss, a.k.a the IoU loss.
+    Note that PyTorch optimizers minimize a loss. In this
+    case, we would like to maximize the jaccard loss so we
+    return the negated jaccard loss.
+    Args:
+        true: a tensor of shape [B, H, W] or [B, 1, H, W].
+        logits: a tensor of shape [B, C, H, W]. Corresponds to
+            the raw output or logits of the model.
+        eps: added to the denominator for numerical stability.
+    Returns:
+        jacc_loss: the Jaccard loss.
+    """
+    num_classes = logits.shape[1]
+
+    if num_classes == 1:
+        true_1_hot = torch.eye(num_classes + 1)[true.squeeze(1).type(torch.LongTensor)]
+        true_1_hot = true_1_hot.permute(0, 3, 1, 2).float()
+        true_1_hot_f = true_1_hot[:, 0:1, :, :]
+        true_1_hot_s = true_1_hot[:, 1:2, :, :]
+        true_1_hot = torch.cat([true_1_hot_s, true_1_hot_f], dim=1)
+        pos_prob = torch.sigmoid(logits)
+        neg_prob = 1 - pos_prob
+        probas = torch.cat([pos_prob, neg_prob], dim=1)
+    else:
+        true_1_hot = torch.eye(num_classes)[true.squeeze(1)]
+        true_1_hot = true_1_hot.permute(0, 3, 1, 2).float()
+        probas = F.softmax(logits, dim=1)
+    true_1_hot = true_1_hot.type(logits.type())
+    dims = (0,) + tuple(range(2, true.ndimension()))
+    intersection = torch.sum(probas * true_1_hot, dims)
+    cardinality = torch.sum(probas + true_1_hot, dims)
+    union = cardinality - intersection
+    jacc_idx = (intersection / (union + eps)).mean()
+    return jacc_idx
 
 
 class DiceLoss(torch.nn.Module):

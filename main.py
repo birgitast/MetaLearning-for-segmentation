@@ -9,7 +9,7 @@ import matplotlib.pyplot as plt
 from maml import ModelAgnosticMetaLearning
 from data import get_datasets
 from models import Unet
-from utils import dataloader_test, print_test_param, plot_errors, plot_accuracy, visualize, show_random_data, DiceLoss
+from utils import dataloader_test, print_test_param, plot_errors, plot_accuracy, plot_iou, visualize, show_random_data, DiceLoss
 
 import math, time
 
@@ -58,7 +58,7 @@ def main(args):
 
 
     # get datasets and load into meta learning format
-    meta_train_dataset, meta_val_dataset, meta_test_dataset = get_datasets(args.dataset, args.datafolder, args.num_ways, args.num_shots, args.num_shots_test, fold=3, download=download_data)
+    meta_train_dataset, meta_val_dataset, meta_test_dataset = get_datasets(args.dataset, args.datafolder, args.num_ways, args.num_shots, args.num_shots_test, fold=args.fold, download=download_data)
 
     meta_train_dataloader = BatchMetaDataLoader(meta_train_dataset,
                                                 batch_size=args.batch_size,
@@ -98,23 +98,26 @@ def main(args):
     epoch_desc = 'Epoch {{0: <{0}d}}'.format(1 + int(math.log10(args.num_epochs)))
     train_losses = []
     val_losses = []
+    train_ious = []
     train_accuracies = []
     val_accuracies = []
+    val_ious = []
 
     start_time = time.time()
 
     for epoch in range(args.num_epochs):
         print('start epoch ', epoch+1)
         print('start train---------------------------------------------------')
-        train_loss, train_accuracy = metalearner.train(meta_train_dataloader,
+        train_loss, train_accuracy, train_iou = metalearner.train(meta_train_dataloader,
                           max_batches=args.num_batches,
                           verbose=args.verbose,
                           desc='Training',
                           leave=False)
-        print(f'\n accuracy: {train_accuracy}, loss: {train_loss}')
+        print(f'\n train accuracy: {train_accuracy}, train loss: {train_loss}')
         print('end train---------------------------------------------------')
         train_losses.append(train_loss)
         train_accuracies.append(train_accuracy)
+        train_ious.append(train_iou)
 
         if epoch%args.val_step_size == 0:
             print('start evaluate-------------------------------------------------')
@@ -122,8 +125,12 @@ def main(args):
                                             max_batches=args.num_batches,
                                             verbose=args.verbose,
                                             desc=epoch_desc.format(epoch + 1))
-            val_losses.append(results['mean_outer_loss'])
-            val_accuracies.append(results['accuracy'])
+            val_acc = results['accuracy']
+            val_loss = results['mean_outer_loss']
+            val_losses.append(val_loss)
+            val_accuracies.append(val_acc)
+            val_ious.append(results['iou'])
+            print(f'\n validation accuracy: {val_acc}, validation loss: {val_loss}')
             print('end evaluate-------------------------------------------------')
 
             # Save best model
@@ -146,8 +153,10 @@ def main(args):
     elapsed_time = time.time() - start_time
     print('Finished after ', time.strftime('%H:%M:%S',time.gmtime(elapsed_time)))
 
+
     plot_errors(args.num_epochs, train_losses, val_losses, val_step_size=args.val_step_size, output_folder=output_folder, save=True)
     plot_accuracy(args.num_epochs, train_accuracies, val_accuracies, val_step_size=args.val_step_size, output_folder=output_folder, save=True)
+    plot_iou(args.num_epochs, train_ious, val_ious, val_step_size=args.val_step_size, output_folder=output_folder, save=True)
     
 
     if hasattr(meta_train_dataset, 'close'):
@@ -183,6 +192,8 @@ if __name__ == '__main__':
     parser.add_argument('--num-shots-test', type=int, default=15,
         help='Number of test example per class. If negative, same as the number '
         'of training examples `--num-shots` (default: 15).')
+    parser.add_argument('--fold', type=int, default=0,
+        help='The model validates on the given fold and trains on the other three (default: 0).')
 
     # Model
     parser.add_argument('--feature-scale', type=int, default=4,

@@ -9,12 +9,15 @@ import matplotlib
 matplotlib.use('TkAgg')
 import matplotlib.image as mpimg
 import matplotlib.pyplot as plt
+import numpy as np
+
 
 from models import Unet
 from utils import visualize, load_random_samples, print_test_param, DiceLoss, dataloader_test
 
 from data import get_datasets
 from maml import ModelAgnosticMetaLearning
+
 
 
 def main(args):
@@ -42,11 +45,17 @@ def main(args):
     else:
         model = Unet(feature_scale=4)
 
+    if 'fold' in config.keys():
+        fold = config['fold']
+    else:
+        fold=0
+    print('fold: ', fold)
+
     #print_test_param(model)
     # get datasets and load into meta learning format
     meta_train_dataset, meta_val_dataset, meta_test_dataset = get_datasets('pascal5i', data_path, config['num_ways'], config['num_shots'], config['num_shots_test'], fold=fold, download=False)
 
-    print('bath size = ',config['batch_size'])
+    print('batch size = ',config['batch_size'])
 
     meta_test_dataloader = BatchMetaDataLoader(meta_train_dataset,
                                                 batch_size=config['batch_size'],
@@ -79,23 +88,32 @@ def main(args):
                                    desc='Test',
                                    is_test=True)
     
-    print('results: ', results)
+    #print('results: ', results)
 
     labels =['aeroplane', 'bike', 'bird', 'boat', 'bottle', 'bus', 'car', 'cat', 'chair', 'cow', 'dining table', 'dog', 'horse', 'motorbike', 
             'person', 'pottedplant', 'sheep', 'sofa', 'train', 'tvmonitor']
     accuracies = [value for _, value in results['mean_acc_per_label'].items()]
+    ious = [value for _, value in results['mean_iou_per_label'].items()]
 
 
-    import matplotlib.pyplot as plt; plt.rcdefaults()
-    import numpy as np
 
     y_pos = np.arange(len(labels))
 
-    plt.barh(y_pos, accuracies, align='center', alpha=0.5)
-    plt.yticks(y_pos, labels)
-    plt.xlabel('acc')
-    plt.xlim(0, 1)
-    plt.title('Accuracies per label')
+    fig, (ax1, ax2) = plt.subplots(1, 2)
+    
+    ax1.barh(y_pos, accuracies, align='center', alpha=0.5)
+    ax1.set_yticks(y_pos)
+    ax1.set_yticklabels(labels)
+    ax1.set_xlabel('acc')
+    ax1.set_xlim(0, 1)
+    ax1.set_title('Accuracies per label')
+
+    ax2.barh(y_pos, ious, align='center', alpha=0.5)
+    ax2.set_yticks(y_pos)
+    ax2.set_yticklabels(labels)
+    ax2.set_xlabel('iou')
+    ax2.set_xlim(0, 1)
+    ax2.set_title('IoU scores per label')
 
     plt.show()
 
