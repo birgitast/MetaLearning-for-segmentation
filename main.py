@@ -58,7 +58,7 @@ def main(args):
 
 
     # get datasets and load into meta learning format
-    meta_train_dataset, meta_val_dataset, meta_test_dataset = get_datasets(args.dataset, args.datafolder, args.num_ways, args.num_shots, args.num_shots_test, fold=args.fold, download=download_data)
+    meta_train_dataset, meta_val_dataset, meta_test_dataset = get_datasets(args.dataset, args.datafolder, args.num_ways, args.num_shots, args.num_shots_test, augment=True, fold=args.fold, download=download_data)
 
     meta_train_dataloader = BatchMetaDataLoader(meta_train_dataset,
                                                 batch_size=args.batch_size,
