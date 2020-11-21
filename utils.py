@@ -120,10 +120,15 @@ def plot_accuracy(num_epochs, train_acc, val_acc, val_step_size, output_folder, 
         plt.savefig(output_folder + '/accuracies.png')
         plt.clf()
 
-def plot_errors(num_epochs, train_losses, val_losses, val_step_size, output_folder, save=True):
+def plot_errors(num_epochs, train_losses, val_losses, val_step_size, output_folder, save=True, bce_dice_focal=False):
     plt.plot(range(0, num_epochs), train_losses, 'r--', label='Training Loss')
     plt.plot(range(0, num_epochs, val_step_size), val_losses, 'b-', label='Validation Loss')
-    plt.ylim(0, 1)
+    print(bce_dice_focal)
+    if bce_dice_focal:
+        plt.ylim(bottom=0)        
+    else:
+        plt.ylim(0, 1)
+    plt.xlim(left=0)
     plt.legend(loc='upper right')
     plt.xlabel('Epochs')
     plt.ylabel('Loss')
@@ -309,3 +314,176 @@ class DiceLoss(torch.nn.Module):
         
         return Dice_BCE"""
         
+
+
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+from torch.autograd import Variable
+# I refered https://github.com/c0nn3r/RetinaNet/blob/master/focal_loss.py
+import torch
+
+import torch.nn as nn
+import torch.nn.functional as F
+
+from torch.autograd import Variable
+
+
+class FocalLoss(nn.Module):
+
+    def __init__(self, focusing_param=2, balance_param=0.25):
+        super(FocalLoss, self).__init__()
+
+        self.focusing_param = focusing_param
+        self.balance_param = balance_param
+
+    def forward(self, output, target):
+
+        cross_entropy = F.cross_entropy(output, target)
+        cross_entropy_log = torch.log(cross_entropy)
+        logpt = - F.cross_entropy(output, target)
+        pt    = torch.exp(logpt)
+
+        focal_loss = -((1 - pt) ** self.focusing_param) * logpt
+
+        balanced_focal_loss = self.balance_param * focal_loss
+
+        return balanced_focal_loss
+
+
+
+# from https://github.com/doiken23/pytorch_toolbox/blob/master/focalloss2d.py
+"""class FocalLoss2d(nn.Module):
+
+    def __init__(self, gamma=0, weight=None, size_average=True):
+        super(FocalLoss2d, self).__init__()
+
+        self.gamma = gamma
+        self.weight = weight
+        self.size_average = size_average
+
+    def forward(self, input, target):
+        if input.dim()>2:
+            input = input.contiguous().view(input.size(0), input.size(1), -1)
+            input = input.transpose(1,2)
+            input = input.contiguous().view(-1, input.size(2)).squeeze()
+        if target.dim()==4:
+            target = target.contiguous().view(target.size(0), target.size(1), -1)
+            target = target.transpose(1,2)
+            target = target.contiguous().view(-1, target.size(2)).squeeze()
+        elif target.dim()==3:
+            target = target.view(-1)
+        else:
+            target = target.view(-1, 1)
+
+        # compute the negative likelyhood
+        weight = Variable(self.weight)
+        logpt = -F.cross_entropy(input, target)
+        pt = torch.exp(logpt)
+
+        # compute the loss
+        loss = -((1-pt)**self.gamma) * logpt
+
+        # averaging (or not) loss
+        if self.size_average:
+            return loss.mean()
+        else:
+            return loss.sum()"""
+
+
+
+# 1) from https://www.kaggle.com/bigironsphere/loss-function-library-keras-pytorch
+#PyTorch
+"""
+ALPHA = 0.8
+GAMMA = 2
+import torch.nn.functional as F
+class FocalLoss(nn.Module):
+    def __init__(self, weight=None, size_average=True):
+        super(FocalLoss, self).__init__()
+
+    def forward(self, inputs, targets, alpha=ALPHA, gamma=GAMMA, smooth=1):
+        
+        #comment out if your model contains a sigmoid or equivalent activation layer
+        inputs = F.sigmoid(inputs)       
+        
+        #flatten label and prediction tensors
+        inputs = inputs.view(-1)
+        targets = targets.view(-1)
+        
+        #first compute binary cross-entropy 
+        BCE = F.binary_cross_entropy(inputs, targets, reduction='mean')
+        BCE_EXP = torch.exp(-BCE)
+        focal_loss = alpha * (1-BCE_EXP)**gamma * BCE
+                       
+        return focal_loss"""
+
+
+
+
+# 2) from https://github.com/achaiah/pywick/blob/master/pywick/losses.py
+
+class FocalLoss(nn.Module):
+    """
+    Weighs the contribution of each sample to the loss based in the classification error.
+    If a sample is already classified correctly by the CNN, its contribution to the loss decreases.
+    :eps: Focusing parameter. eps=0 is equivalent to BCE_loss
+    """
+    def __init__(self, l=0.5, eps=1e-6):
+        super(FocalLoss, self).__init__()
+        self.l = l
+        self.eps = eps
+
+    def forward(self, logits, targets):
+        targets = targets.view(-1)
+        probs = torch.sigmoid(logits).view(-1)
+
+        losses = -(targets * torch.pow((1. - probs), self.l) * torch.log(probs + self.eps) + \
+                   (1. - targets) * torch.pow(probs, self.l) * torch.log(1. - probs + self.eps))
+        loss = torch.mean(losses)
+
+        return loss
+
+
+
+
+# 3) from https://github.com/achaiah/pywick/blob/master/pywick/losses.py
+class BCEDiceFocalLoss(nn.Module):
+    '''
+        :param num_classes: number of classes
+        :param gamma: (float,double) gamma > 0 reduces the relative loss for well-classified examples (p>0.5) putting more
+                            focus on hard misclassified example
+        :param size_average: (bool, optional) By default, the losses are averaged over each loss element in the batch.
+        :param weights: (list(), default = [1,1,1]) Optional weighing (0.0-1.0) of the losses in order of [bce, dice, focal]
+    '''
+    def __init__(self, focal_param=0.5, weights=[1.0,1.0,1.0], **kwargs):
+        super(BCEDiceFocalLoss, self).__init__()
+        self.bce = torch.nn.BCEWithLogitsLoss(weight=None, size_average=None, reduce=None, reduction='mean', pos_weight=None)
+        self.dice = SoftDiceLoss()
+        self.focal = FocalLoss(l=focal_param)
+        self.weights = weights
+
+    def forward(self, logits, targets):
+        logits = logits.squeeze()
+        targets = torch.squeeze(targets, dim=1)
+        return self.weights[0] * self.bce(logits, targets) + self.weights[1] * self.dice(logits, targets) + self.weights[2] * self.focal(logits.unsqueeze(1), targets.unsqueeze(1))
+
+
+class SoftDiceLoss(nn.Module):
+    def __init__(self, smooth=1.0, **kwargs):
+        super(SoftDiceLoss, self).__init__()
+        self.smooth = smooth
+
+    def forward(self, logits, targets):
+        #print('logits: {}, targets: {}'.format(logits.size(), targets.size()))
+        num = targets.size(0)
+        probs = torch.sigmoid(logits)
+        m1 = probs.view(num, -1)
+        m2 = targets.view(num, -1)
+        intersection = (m1 * m2)
+
+        # smooth = 1.
+
+        score = 2. * (intersection.sum(1) + self.smooth) / (m1.sum(1) + m2.sum(1) + self.smooth)
+        score = 1 - score.sum() / num
+        return score

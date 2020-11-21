@@ -9,7 +9,7 @@ import matplotlib.pyplot as plt
 from maml import ModelAgnosticMetaLearning
 from data import get_datasets
 from models import Unet
-from utils import dataloader_test, print_test_param, plot_errors, plot_accuracy, plot_iou, visualize, show_random_data, DiceLoss
+from utils import FocalLoss, BCEDiceFocalLoss, dataloader_test, print_test_param, plot_errors, plot_accuracy, plot_iou, visualize, show_random_data, DiceLoss
 
 import math, time
 
@@ -20,11 +20,15 @@ from collections import OrderedDict
 
 
 download_data = True
+bce_dice_focal = False
 
 #loss_function = torch.nn.NLLLoss()
 #loss_function = torch.nn.BCEWithLogitsLoss()
-loss_function = DiceLoss()
+#loss_function = DiceLoss()
 #loss_function = torch.nn.CrossEntropyLoss()
+loss_function = FocalLoss()
+#loss_function = BCEDiceFocalLoss()
+#bce_dice_focal = True
 
 
 def main(args):
@@ -154,7 +158,7 @@ def main(args):
     print('Finished after ', time.strftime('%H:%M:%S',time.gmtime(elapsed_time)))
 
 
-    plot_errors(args.num_epochs, train_losses, val_losses, val_step_size=args.val_step_size, output_folder=output_folder, save=True)
+    plot_errors(args.num_epochs, train_losses, val_losses, val_step_size=args.val_step_size, output_folder=output_folder, save=True, bce_dice_focal=bce_dice_focal)
     plot_accuracy(args.num_epochs, train_accuracies, val_accuracies, val_step_size=args.val_step_size, output_folder=output_folder, save=True)
     plot_iou(args.num_epochs, train_ious, val_ious, val_step_size=args.val_step_size, output_folder=output_folder, save=True)
     
