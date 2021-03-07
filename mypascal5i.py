@@ -210,7 +210,9 @@ class Pascal5iClassDataset(ClassDataset):
     def labels(self):
         if self._labels is None:
            self._labels = self.read_labels(self.fold)
-        return self._labels[1:]
+        if self._labels[0] == 'background':
+            return self._labels[1:]
+        return self._labels
 
     def download(self):
         import zipfile
