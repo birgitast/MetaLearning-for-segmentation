@@ -18,6 +18,9 @@ except ImportError:
 
 import torchvision.transforms.functional as F
 
+
+"""------------------------------------------ Methods for pairwise augmentation in segmentation problems --------------------------------------"""
+
 class ToTensor:
     """Convert a ``PIL Image`` or ``numpy.ndarray`` to tensor. This transform does not support torchscript.
 

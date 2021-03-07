@@ -3,12 +3,12 @@ from torchmeta.utils.data import BatchMetaDataLoader
 import torch.nn.functional as F
 
 import matplotlib
-matplotlib.use('Agg')
+matplotlib.use('TkAgg')
 import matplotlib.pyplot as plt
 
 from maml import ModelAgnosticMetaLearning
 from data import get_datasets
-from models import Unet
+from models import Unet, ResUnet, FCN8
 from utils import FocalLoss, BCEDiceFocalLoss, dataloader_test, print_test_param, plot_errors, plot_accuracy, plot_iou, visualize, show_random_data, DiceLoss
 
 import math, time
@@ -18,15 +18,19 @@ import json, os, logging
 from collections import OrderedDict
 
 
+download_data = True # Download data to local file (won't download if already there)
+bce_dice_focal = False # If True, adjusts y_lim in error plot
+augment = True # Use data augmentation
 
-download_data = True
-bce_dice_focal = False
 
 #loss_function = torch.nn.NLLLoss()
 #loss_function = torch.nn.BCEWithLogitsLoss()
-#loss_function = DiceLoss()
+loss_function = DiceLoss()
+
+
+"""doesn't work"""
 #loss_function = torch.nn.CrossEntropyLoss()
-loss_function = FocalLoss()
+#loss_function = FocalLoss()
 #loss_function = BCEDiceFocalLoss()
 #bce_dice_focal = True
 
@@ -37,6 +41,7 @@ def main(args):
     device = torch.device('cuda' if args.use_cuda
                           and torch.cuda.is_available() else 'cpu')
 
+    # Create output folder 
     if (args.output_folder is not None):
         if not os.path.exists(args.output_folder):
             os.makedirs(args.output_folder)
@@ -62,7 +67,7 @@ def main(args):
 
 
     # get datasets and load into meta learning format
-    meta_train_dataset, meta_val_dataset, meta_test_dataset = get_datasets(args.dataset, args.datafolder, args.num_ways, args.num_shots, args.num_shots_test, augment=True, fold=args.fold, download=download_data)
+    meta_train_dataset, meta_val_dataset, _ = get_datasets(args.dataset, args.datafolder, args.num_ways, args.num_shots, args.num_shots_test, augment=augment, fold=args.fold, download=download_data)
 
     meta_train_dataloader = BatchMetaDataLoader(meta_train_dataset,
                                                 batch_size=args.batch_size,
@@ -75,13 +80,17 @@ def main(args):
                                                 shuffle=True,
                                                 num_workers=args.num_workers,
                                                 pin_memory=True)
-    
+
 
 
     #show_random_data(meta_train_dataset)
 
-    model = Unet()   
+    model = Unet(device=device, feature_scale=args.feature_scale)  
+    model = model.to(device) 
     print(f'Using device: {device}')
+    #model_path = '/home/birgit/MA/experiments/results/unet/base/base_model/model.th'
+    #with open(model_path, 'rb') as f:
+        #model.load_state_dict(torch.load(f, map_location=device))
 
     meta_optimizer = torch.optim.Adam(model.parameters(), lr=args.meta_lr)#, weight_decay=1e-5)
     #meta_optimizer = torch.optim.RMSprop(model.parameters(), lr=learning_rate, momentum = 0.99)
@@ -90,12 +99,13 @@ def main(args):
                                             first_order=args.first_order,
                                             num_adaptation_steps=args.num_adaption_steps,
                                             step_size=args.step_size,
+                                            learn_step_size=False,
                                             loss_function=loss_function,
                                             device=device)
 
     best_value = None
 
-    #dataloader_test(meta_train_dataloader)
+    #dataloader_test(meta_train_dataloader, model)
 
 
     # Training loop
@@ -123,12 +133,14 @@ def main(args):
         train_accuracies.append(train_accuracy)
         train_ious.append(train_iou)
 
+        # Evaluate in given intervals
         if epoch%args.val_step_size == 0:
             print('start evaluate-------------------------------------------------')
             results = metalearner.evaluate(meta_val_dataloader,
                                             max_batches=args.num_batches,
                                             verbose=args.verbose,
-                                            desc=epoch_desc.format(epoch + 1))
+                                            desc=epoch_desc.format(epoch + 1),
+                                            is_test=False)
             val_acc = results['accuracy']
             val_loss = results['mean_outer_loss']
             val_losses.append(val_loss)
@@ -157,7 +169,21 @@ def main(args):
     elapsed_time = time.time() - start_time
     print('Finished after ', time.strftime('%H:%M:%S',time.gmtime(elapsed_time)))
 
+    r = {}
+    r['train_losses'] = train_losses
+    r['train_accuracies'] = train_accuracies
+    r['train_ious'] = train_ious
+    r['val_losses'] = val_losses
+    r['val_accuracies'] = val_accuracies
+    r['val_ious'] = val_ious
+    r['time'] = time.strftime('%H:%M:%S',time.gmtime(elapsed_time))
+    with open(os.path.join(output_folder, 'train_results.json'), 'w') as g:
+        json.dump(r, g)
+        logging.info('Saving results dict in `{0}`'.format(
+                     os.path.abspath(os.path.join(output_folder, 'train_results.json'))))
 
+
+    # Plot results
     plot_errors(args.num_epochs, train_losses, val_losses, val_step_size=args.val_step_size, output_folder=output_folder, save=True, bce_dice_focal=bce_dice_focal)
     plot_accuracy(args.num_epochs, train_accuracies, val_accuracies, val_step_size=args.val_step_size, output_folder=output_folder, save=True)
     plot_iou(args.num_epochs, train_ious, val_ious, val_step_size=args.val_step_size, output_folder=output_folder, save=True)
@@ -185,23 +211,24 @@ if __name__ == '__main__':
     parser.add_argument('datafolder', type=str,
         help='Path to the folder the data is downloaded to.')
     parser.add_argument('--dataset', type=str,
-        choices=['pascal5i'], default='pascal5i',
+        choices=['pascal5i','mydata'], default='pascal5i',
         help='Name of the dataset (default: pascal5i).')
     parser.add_argument('--output-folder', type=str, default='results',
         help='Path to the output folder to save the model.')
     parser.add_argument('--num-ways', type=int, default=1,
-        help='Number of classes per task (N in "N-way", default: 1).')
+        help='Number of classes per task (n in "n-way", default: 1).')
     parser.add_argument('--num-shots', type=int, default=5,
         help='Number of training example per class (k in "k-shot", default: 5).')
     parser.add_argument('--num-shots-test', type=int, default=15,
         help='Number of test example per class. If negative, same as the number '
         'of training examples `--num-shots` (default: 15).')
     parser.add_argument('--fold', type=int, default=0,
-        help='The model validates on the given fold and trains on the other three (default: 0).')
+        help='The model validates on the given fold (class split) and trains on the other three (default: 0).')
+
 
     # Model
     parser.add_argument('--feature-scale', type=int, default=4,
-        help='Scaling of number of feature maps '
+        help='Scaling of number of feature maps.'
         '(default: 4).')
 
     # Optimization

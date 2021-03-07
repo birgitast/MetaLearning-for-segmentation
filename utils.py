@@ -2,7 +2,7 @@ import torch
 
 import random
 import matplotlib
-matplotlib.use('Agg')
+matplotlib.use('TkAgg')
 import matplotlib.pyplot as plt
 
 import numpy as np
@@ -49,9 +49,10 @@ import PIL
 
 
 class SegmentationPairTransformNorm(object):
-    # normalization: imagenet normalization! may need to be adjusted, maybe Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)) 
+    """Transform both the image and its respective mask"""
+    # Normalization: imagenet normalization! may need to be adjusted, maybe Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)) 
     def __init__(self, target_size):
-        self.image_transform = Compose([Resize((target_size, target_size)), ToTensor()])#, Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])])
+        self.image_transform = Compose([Resize((target_size, target_size)), ToTensor()])#, Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])]) #Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])])
         self.mask_transform = Compose([Resize((target_size, target_size),
                                                interpolation=PIL.Image.NEAREST), ToTensor()])#, Normalize([0.5], [0.5])])
 
@@ -63,9 +64,10 @@ class SegmentationPairTransformNorm(object):
 
 
 def dataloader_test(dataloader, model=None):
+    """Test the dataloader:
+       - printing shape information 
+       - plotting image + mask (+ model output if a model is given)"""
     for batch in dataloader:
-
-        # dataloader test:
         train_inputs, train_targets, train_labels = batch['train']
         print('Train inputs shape: {0}'.format(train_inputs.shape))    # (batchsize, no of shots, channels = 3 (RGB), h, w)
         print('Train targets shape: {0}'.format(train_targets.shape))  # (batchsize, no of shots, channels = 1, h, w)
@@ -75,77 +77,81 @@ def dataloader_test(dataloader, model=None):
 
         label_idx = train_labels[0][0] - 6
         #label = meta_train_dataset.dataset.labels[label_idx]
-        label = ''
-        print('label ', train_labels)
-        print('label ', train_labels[0])
-        print('label ', train_labels[0][0])
-        #visualize(train_inputs[0][0], label + ' input')
-        #visualize(train_targets[0][0], label + ' target')
-        visualize([train_inputs[0][0], train_targets[0][0]])
-        plt.show()
+        label = train_labels[0][0].item()
+        print('label: ', label)
+
+        visualize([train_inputs[0][0], train_targets[0][0]], 'label: {}'.format(label))
+        #plt.show()
+        plt.savefig('test.png')
 
 
         if model:
-            # model test:
+            # Model test:
             seg_threshold=0.6
             outputs = model(train_inputs[0])
             print('Output shape: {0}'.format(outputs.shape))
-            output1 = outputs[0].detach()  
-            prob_map = torch.sigmoid(output1)
+            output = outputs[0].detach()  
+            prob_map = torch.sigmoid(output)
             mask = (prob_map > seg_threshold).float()
 
-            #visualize(output1, label + ' model output')
-            #visualize(mask, label + ' model mask')
-            visualize([train_inputs[0][0], output1, mask])
-            plt.show()
+            visualize([train_inputs[0][0], train_targets[0][0], mask])
+            #plt.show()
+            plt.savefig('test.png')
         break
 
 
 def print_test_param(model):
+    """Output one model parameter and its value"""
     for name, param in model.named_parameters():
         #if param.requires_grad:
         print(name, param.data)
         break
         
 def plot_accuracy(num_epochs, train_acc, val_acc, val_step_size, output_folder, save=True):
+    """Plot training and validation accuracy over the given epochs"""
     plt.plot(range(0, num_epochs), train_acc, 'r--', label='Training Accuracy')
     plt.plot(range(0, num_epochs, val_step_size), val_acc, 'b-', label='Validation Accuracy')
     plt.ylim(0, 1)
     plt.legend(loc='lower right')
-    plt.xlabel('Epochs')
-    plt.ylabel('Accuracy')
+    plt.xlabel('epoch')
+    plt.ylabel('accuracy')
     plt.title('Training Accuracy vs Validation Accuracy')
+    plt.grid(True)
     #plt.show()
     if save:
         plt.savefig(output_folder + '/accuracies.png')
         plt.clf()
 
 def plot_errors(num_epochs, train_losses, val_losses, val_step_size, output_folder, save=True, bce_dice_focal=False):
+    """Plot training and validation error over the given epochs"""
+    import matplotlib.pyplot as plt
     plt.plot(range(0, num_epochs), train_losses, 'r--', label='Training Loss')
     plt.plot(range(0, num_epochs, val_step_size), val_losses, 'b-', label='Validation Loss')
-    print(bce_dice_focal)
     if bce_dice_focal:
         plt.ylim(bottom=0)        
     else:
         plt.ylim(0, 1)
     plt.xlim(left=0)
     plt.legend(loc='upper right')
-    plt.xlabel('Epochs')
-    plt.ylabel('Loss')
+    plt.xlabel('epoch')
+    plt.ylabel('loss')
     plt.title('Training Loss vs Validation Loss')
+    plt.grid(True)
     #plt.show()
     if save:
         plt.savefig(output_folder + '/losses.png')
         plt.clf()
 
 def plot_iou(num_epochs, train_iou, val_iou, val_step_size, output_folder, save=True):
+    """Plot training and validation Intersection over Union score over given epochs"""
     plt.plot(range(0, num_epochs), train_iou, 'r--', label='Training IoU')
     plt.plot(range(0, num_epochs, val_step_size), val_iou, 'b-', label='Validation IoU')
     plt.ylim(0, 1)
     plt.legend(loc='lower right')
-    plt.xlabel('Epochs')
+    plt.xlabel('epoch')
     plt.ylabel('IoU')
     plt.title('Training IoU vs Validation IoU')
+    plt.grid(True)
     #plt.show()
     if save:
         plt.savefig(output_folder + '/iou.png')
@@ -153,13 +159,11 @@ def plot_iou(num_epochs, train_iou, val_iou, val_step_size, output_folder, save=
 
 
 
-# plot a given image tensor
 def visualize(tensor, class_name=None):
-
+    """Plot a given image tensor or list of tensors"""
     if type(tensor)!=list:
         img = tensor.permute(1, 2, 0)
         img = img.numpy()
-
         plt.figure()
         plt.title(class_name)
         plt.imshow(img)
@@ -169,41 +173,32 @@ def visualize(tensor, class_name=None):
         for i in range(len(tensor)):
             img = tensor[i].permute(1, 2, 0)
             img = img.numpy()
+            ax = plt.gca()
+            axes[i].xaxis.set_visible(False)
+            axes[i].yaxis.set_visible(False)
             axes[i].imshow(img)
+            
 
 
 
-# plot one random image + corresponding mask from training data
 def show_random_data(meta_train_dataset):
-
+    """Plot one random image + corresponding mask from training dataset"""
+    # Get data by class, e.g. data_by_class[0]: all bus tuples; im, mask, label_idx = meta_train_dataset.dataset[0][0]
     classes = meta_train_dataset.dataset.labels
-    data_by_class = meta_train_dataset.dataset # eg. data_by_class[0]: all bus tuples; im, mask, label_idx = meta_train_dataset.dataset[0][0]
+    data_by_class = meta_train_dataset.dataset 
 
+    # Choose a random image + mask pait out of a random class
     rnd_class_idx = random.randint(0, len(classes)-1)
     rnd_class = classes[rnd_class_idx]
     rnd_im, rnd_mask, _ = random.choice(data_by_class[rnd_class_idx])
-    visualize(rnd_im, rnd_class)
-    visualize(rnd_mask, rnd_class)
-
-    plt.show()
-
+    visualize([rnd_im, rnd_mask], rnd_class)
+    #plt.show()
+    plt.save('random.png')
 
 
-def load_random_samples(mask_path, jpeg_path):#, num_shots):
-    import os
-    
-    """rnd_names = random.choices([x for x in os.listdir(mask_path) if os.path.isfile(os.path.join(mask_path, x))], k=num_shots+1)
-    rnd_masks = [Image.open(mask_path + '/' + name) for name in rnd_names]
-    rnd_imgs = [Image.open(jpeg_path + '/' + name[0:11]+'.jpg') for name in rnd_names]
-    tensor_transform = SegmentationPairTransformNorm(256)
-    imgs=[]
-    masks=[]
-    for i in range(len(rnd_names)):
-        img, mask = tensor_transform(rnd_imgs[i], rnd_masks[i])
-        img = torch.unsqueeze(img, 0)
-        imgs.append(img)
-        masks.append(mask)"""
-     
+
+'''def load_random_samples(mask_path, jpeg_path):#, num_shots):
+    """Return a random image + mask pair from the whole dataset""" 
     rnd_name = random.choice([x for x in os.listdir(mask_path) if os.path.isfile(os.path.join(mask_path, x))])
     rnd_mask = Image.open(mask_path + '/' + rnd_name)
     rnd_img = Image.open(jpeg_path + '/' + rnd_name[0:11]+'.jpg')
@@ -211,23 +206,24 @@ def load_random_samples(mask_path, jpeg_path):#, num_shots):
     img, mask = tensor_transform(rnd_img, rnd_mask)
     img = torch.unsqueeze(img, 0)
 
-    return img, mask
+    return img, mask'''
 
 
 def get_dice_score(pred, targets, smooth=1):
-        #comment out if your model contains a sigmoid or equivalent activation layer
-        pred = torch.sigmoid(pred)
-        # hard dice score:
-        #pred = (pred > 0.5).float()       
+    """Return the dice score of a given prediction and the ground truth"""
+    # Comment out if your model contains a sigmoid or equivalent activation layer
+    pred = torch.sigmoid(pred)
+    # hard dice score:
+    #pred = (pred > 0.5).float()       
         
-        #flatten label and prediction tensors
-        pred = pred.view(-1)
-        targets = targets.view(-1)
+    # Flatten label and prediction tensors
+    pred = pred.view(-1)
+    targets = targets.view(-1)
         
-        intersection = (pred * targets).sum()                            
-        dice = (2.*intersection + smooth)/(pred.sum() + targets.sum() + smooth) 
+    intersection = (pred * targets).sum()                            
+    dice = (2.*intersection + smooth)/(pred.sum() + targets.sum() + smooth) 
 
-        return dice
+    return dice
 
 """# get intersection over union
 def iou(prediction, target):
@@ -284,6 +280,7 @@ def jaccard_idx(true, logits, eps=1e-7):
 
 
 class DiceLoss(torch.nn.Module):
+    """Compute the Dice Loss between an image and target out of the dice score"""
     def __init__(self, weight=None, size_average=True):
         super(DiceLoss, self).__init__()
 
@@ -294,16 +291,17 @@ class DiceLoss(torch.nn.Module):
         return 1 - dice_score
 
 
-"""class DiceBCELoss(torch.nn.Module):
+'''class DiceBCELoss(torch.nn.Module):
+    """Compute the Dice Binary Cross Entropy score between an image and target"""
     def __init__(self, weight=None, size_average=True):
         super(DiceBCELoss, self).__init__()
 
     def forward(self, inputs, targets, smooth=1):
         
-        #comment out if your model contains a sigmoid or equivalent activation layer
+        # Comment out if your model contains a sigmoid or equivalent activation layer
         inputs = torch.sigmoid(inputs)       
         
-        #flatten label and prediction tensors
+        # Flatten label and prediction tensors
         inputs = inputs.view(-1)
         targets = targets.view(-1)
         
@@ -312,11 +310,15 @@ class DiceLoss(torch.nn.Module):
         BCE = torch.nn.BCELoss(inputs, targets, reduction='mean')
         Dice_BCE = BCE + dice_loss
         
-        return Dice_BCE"""
+        return Dice_BCE'''
         
 
 
-import torch
+
+
+
+""" --------------------------------------- ALTERNATIVE LOSS FUNCTIONS -----------------------------------------------------"""
+
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.autograd import Variable
@@ -487,3 +489,67 @@ class SoftDiceLoss(nn.Module):
         score = 2. * (intersection.sum(1) + self.smooth) / (m1.sum(1) + m2.sum(1) + self.smooth)
         score = 1 - score.sum() / num
         return score
+
+
+
+
+import torch
+
+from collections import OrderedDict
+from torchmeta.modules import MetaModule
+
+
+def gradient_update_parameters(model,
+                               loss,
+                               params=None,
+                               step_size=0.5,
+                               first_order=False):
+    """Update of the meta-parameters with one step of gradient descent on the
+    loss function.
+    Parameters
+    ----------
+    model : `torchmeta.modules.MetaModule` instance
+        The model.
+    loss : `torch.Tensor` instance
+        The value of the inner-loss. This is the result of the training dataset
+        through the loss function.
+    params : `collections.OrderedDict` instance, optional
+        Dictionary containing the meta-parameters of the model. If `None`, then
+        the values stored in `model.meta_named_parameters()` are used. This is
+        useful for running multiple steps of gradient descent as the inner-loop.
+    step_size : int, `torch.Tensor`, or `collections.OrderedDict` instance (default: 0.5)
+        The step size in the gradient update. If an `OrderedDict`, then the
+        keys must match the keys in `params`.
+    first_order : bool (default: `False`)
+        If `True`, then the first order approximation of MAML is used.
+    Returns
+    -------
+    updated_params : `collections.OrderedDict` instance
+        Dictionary containing the updated meta-parameters of the model, with one
+        gradient update wrt. the inner-loss.
+    """
+    if not isinstance(model, MetaModule):
+        raise ValueError('The model must be an instance of `torchmeta.modules.'
+                         'MetaModule`, got `{0}`'.format(type(model)))
+
+    if params is None:
+        params = OrderedDict(model.meta_named_parameters())
+
+    grads = torch.autograd.grad(loss,
+                                params.values(),
+                                create_graph=not first_order,
+                                allow_unused=True)
+
+    updated_params = OrderedDict()
+
+    if isinstance(step_size, (dict, OrderedDict)):
+        for (name, param), grad in zip(params.items(), grads):
+
+            updated_params[name] = param - step_size[name] * grad
+
+    else:
+    
+        for (name, param), grad in zip(params.items(), grads):
+            updated_params[name] = param - step_size * grad
+
+    return updated_params
