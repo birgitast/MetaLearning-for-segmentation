@@ -1,21 +1,8 @@
-"""
-;==========================================
-; Title: Pascal-5i Dataset for Few-shot Object Segmentation
-; Author: Mennatullah Siam
-; Company: Huawei Technologies
-; Date:   18 March 2020
-;==========================================
-"""
 import os
-import json
-import glob
-import h5py
-from PIL import Image, ImageOps
+from PIL import Image
 
 from torchmeta.utils.data import Dataset, ClassDataset, CombinationMetaDataset
-from torchvision.datasets.utils import list_dir, download_url
-from torchmeta.datasets.utils import get_asset
-import numpy as np
+from torchvision.datasets.utils import download_url
 
 from pairtransforms import PairCompose
 
@@ -249,18 +236,12 @@ class PascalDataset(Dataset):
         mask = Image.open(self.masks[index])
         target = self.class_id
 
-        if self.transform is not None:
-            #if isinstance(self.transform, torchvision.transforms.transforms.Compose):                
+        if self.transform is not None:               
             try:
                 image, mask = self.transform(image, mask)
             except TypeError:
                 transforms = self.transform.transforms
                 pc = PairCompose(transforms)
-                """image = pc(transforms)
-                print(type(image))
-                for t in transforms:
-                    print("transform: ", t)
-                    img, mask = t(image, mask)"""
                 image, mask = pc(image, mask)
 
         return (image, mask, target)

@@ -1,15 +1,13 @@
 import torch
-import torch.nn.functional as F
 import numpy as np
 from tqdm import tqdm
 
 from collections import OrderedDict
 from torchmeta.utils import gradient_update_parameters
-from utils import tensors_to_device, compute_accuracy, get_dice_score, jaccard_idx, visualize#, gradient_update_parameters
+from utils import tensors_to_device, compute_accuracy, get_dice_score, jaccard_idx, DiceLoss
+import torch.nn.functional as F
 
-import matplotlib
-matplotlib.use('TkAgg')
-import matplotlib.pyplot as plt
+
 
 __all__ = ['ModelAgnosticMetaLearning', 'MAML', 'FOMAML']
 
@@ -101,15 +99,16 @@ class ModelAgnosticMetaLearning(object):
                     for group in self.optimizer.param_groups])
 
 
+    
     def get_outer_loss(self, batch, is_test=False):
-        """Return """
-        #print('outer_loss')
+        """Iterate over tasks in batch, return mean meta loss """
+
         if 'test' not in batch:
             raise RuntimeError('The batch does not contain any test dataset.')
 
         _, test_targets, _ = batch['test']
         num_tasks = test_targets.size(0)
-        #print('num tasks: ', num_tasks)
+
         is_classification_task = (not test_targets.dtype.is_floating_point)
         results = {
             'num_tasks': num_tasks,
@@ -135,8 +134,8 @@ class ModelAgnosticMetaLearning(object):
         
         for task_id, (train_inputs, train_targets, labels, test_inputs, test_targets, _) \
                 in enumerate(zip(*batch['train'], *batch['test'])):
-            #print('task_id: ', task_id)
-            #print('------------------------start train---------------------------')
+
+            # Adapt model params on support set
             params, adaptation_results = self.adapt(train_inputs, train_targets,
                 is_classification_task=is_classification_task,
                 num_adaptation_steps=self.num_adaptation_steps,
@@ -147,8 +146,8 @@ class ModelAgnosticMetaLearning(object):
             if is_classification_task:
                 results['accuracies_before'][task_id] = adaptation_results['accuracy_before']
 
+            # Evaluate model params on query set
             with torch.set_grad_enabled(self.model.training):
-                #print('------------------------start test ----------------------------')
                 test_logits = self.model(test_inputs, params=params)
                 outer_loss = self.loss_function(test_logits, test_targets)
                 results['outer_losses'][task_id] = outer_loss.item()
@@ -166,44 +165,20 @@ class ModelAgnosticMetaLearning(object):
                 results['iou_dict'][labels[0].item()-1] = [iou]
 
             
-
-
-            #visualize(inputs[0] , 'input ')
-            #visualize(final.detach()[0], 'output')
-            #visualize(mask, 'mask')
-            """
-            final = test_logits
-            prob_mask = torch.sigmoid(final)
-            threshold = 0.6
-            mask = prob_mask.detach()[3] > threshold 
-            visualize([test_inputs[0], test_targets[0], prob_mask.detach()[0] > threshold ])
-            visualize([test_inputs[1], test_targets[1], prob_mask.detach()[1] > threshold ])
-            visualize([test_inputs[2], test_targets[2], prob_mask.detach()[2] > threshold ])
-            visualize([test_inputs[3], test_targets[3], prob_mask.detach()[3] > threshold ])
-            visualize([test_inputs[4], test_targets[4], prob_mask.detach()[4] > threshold ])
-            #print(train_inputs.shape)
-            #print(test_inputs.shape)
-            
-            #visualize([train_inputs[0], train_inputs[1], train_inputs[2],train_inputs[3],train_inputs[4]])
-            plt.show()"""
-            #visualize([test_inputs[0], test_inputs[1], test_inputs[2],test_inputs[3],test_inputs[4]])
-            
-            #print('end task')
         mean_outer_loss.div_(num_tasks)
         mean_accuracy = mean_accuracy/num_tasks
         mean_iou = mean_iou/num_tasks
         results['accuracy'] = mean_accuracy
         results['iou'] = mean_iou
         results['mean_outer_loss'] = mean_outer_loss.item()
-        #print('mean iou ', mean_iou)
-        #print('end outer loss')
 
         return mean_outer_loss, results
+
+
 
     def adapt(self, inputs, targets, is_classification_task=None,
               num_adaptation_steps=1, step_size=0.1, first_order=False, is_test=False):
         """Perform the adaption steps (gradient update) and return the resulting params"""
-        #print('adapt')
         if is_classification_task is None:
             is_classification_task = (not targets.dtype.is_floating_point)
         params = None
@@ -211,19 +186,12 @@ class ModelAgnosticMetaLearning(object):
         results = {'inner_losses': np.zeros(
             (num_adaptation_steps,), dtype=np.float32)}
 
+        # Activate train mode also during evaluation for task-specific adaption
         mode = self.model.training     
         self.model.train(True)
 
         for step in range(num_adaptation_steps):
             logits = self.model(inputs, params=params)
-
-            #probs = torch.sigmoid(logits)
-            #mask = (probs > 0.5).float()
-
-            # needed for other losses than BCEWithLogitsLoss()
-            #targets = torch.squeeze(targets, dim=1)
-            #targets = targets.type(torch.LongTensor)
-
             inner_loss = self.loss_function(logits, targets)
 
             results['inner_losses'][step] = inner_loss.item()
@@ -235,12 +203,12 @@ class ModelAgnosticMetaLearning(object):
                 first_order=(not self.model.training) or first_order)
                 
         self.model.train(mode)
-        #print('end adapt')
 
         return params, results
 
+
     def train(self, dataloader, max_batches=500, verbose=True, **kwargs):
-        """One training epoch"""
+        """One training epoch on meta training set"""
         sum_mean_losses = 0
         sum_mean_accuracies = 0
         sum_mean_iou = 0
@@ -256,7 +224,7 @@ class ModelAgnosticMetaLearning(object):
                     postfix['accuracy'] = '{0:.4f}'.format(
                         np.mean(results['accuracy']))
                 pbar.set_postfix(**postfix)
-                #print('mean outer loss: ', results['mean_outer_loss'])
+
                 sum_mean_losses += results['mean_outer_loss']
                 sum_mean_accuracies += results['accuracy']
                 sum_mean_iou += results['iou']
@@ -264,13 +232,12 @@ class ModelAgnosticMetaLearning(object):
         epoch_loss = sum_mean_losses/iters
         epoch_accuracy = sum_mean_accuracies/iters
         epoch_iou = sum_mean_iou/iters
-        #print(results)
+
         return epoch_loss, epoch_accuracy, epoch_iou
 
 
     def train_iter(self, dataloader, max_batches=500):
-        """One training iteration"""
-        #print('start train_iter')
+        """Iterate over batches, update meta knowledge after each batch"""
         if self.optimizer is None:
             raise RuntimeError('Trying to call `train_iter`, while the '
                 'optimizer is `None`. In order to train `{0}`, you must '
@@ -285,8 +252,6 @@ class ModelAgnosticMetaLearning(object):
                 if num_batches >= max_batches:
                     break
 
-                #print('training batch no. ', num_batches)
-
                 if self.scheduler is not None:
                     self.scheduler.step(epoch=num_batches)
 
@@ -296,18 +261,15 @@ class ModelAgnosticMetaLearning(object):
                 outer_loss, results = self.get_outer_loss(batch)
                 yield results
 
-                outer_loss.backward()
-
-                # update weights               
+                # Outer loop optimization of meta knowledge 
+                outer_loss.backward()              
                 self.optimizer.step()          
                 num_batches += 1
                 
-        
-        #print('end train_iter')
 
 
     def evaluate(self, dataloader, max_batches=500, verbose=True, is_test=False, **kwargs):
-        """ ... """
+        """Evaluation on meta test set"""
         mean_outer_loss, mean_accuracy, mean_iou, count = 0., 0., 0., 0
         acc_dict = {k: [] for k in range(20)}
         iou_dict = {k: [] for k in range(20)}
@@ -318,10 +280,7 @@ class ModelAgnosticMetaLearning(object):
                 mean_outer_loss += (results['mean_outer_loss']
                     - mean_outer_loss) / count
                 postfix = {'loss': '{0:.4f}'.format(mean_outer_loss)}
-                """if 'accuracies_after' in results:
-                    mean_accuracy += (np.mean(results['accuracies_after'])
-                        - mean_accuracy) / count
-                    postfix['accuracy'] = '{0:.4f}'.format(mean_accuracy)"""
+
                 if 'accuracy' in results:
                     mean_accuracy += (np.mean(results['accuracy'])
                         - mean_accuracy) / count
@@ -343,8 +302,7 @@ class ModelAgnosticMetaLearning(object):
 
 
         mean_results = {'mean_outer_loss': mean_outer_loss}
-        """if 'accuracies_after' in results:
-            mean_results['accuracies_after'] = mean_accuracy"""
+
         if 'accuracy' in results:
             mean_results['accuracy'] = mean_accuracy
         if 'iou' in results:
@@ -367,26 +325,26 @@ class ModelAgnosticMetaLearning(object):
             mean_results['mean_iou_per_label'] =  mean_iou_per_label
         return mean_results
 
+
     def evaluate_iter(self, dataloader, max_batches=500, is_test=False):
-        """One evaluation iteration"""
-        #print('start evaluate_iter')
+        """One evaluation iteration, no outer loop optimization"""
+
         num_batches = 0
         self.model.eval()
         
         while num_batches < max_batches:
             for batch in dataloader:
-                #_, _, labels = batch['train']
-                #print(labels)
+
                 if num_batches >= max_batches:
                     break
-                #print('evaluate batch no. ', num_batches)
 
                 batch = tensors_to_device(batch, device=self.device)
                 _, results = self.get_outer_loss(batch, is_test)
                 yield results
 
                 num_batches += 1
-        #print('end evaluate_iter')
+
+
 
 MAML = ModelAgnosticMetaLearning
 

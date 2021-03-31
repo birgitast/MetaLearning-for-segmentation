@@ -2,8 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from torchmeta.modules import (MetaModule, MetaConv2d, MetaBatchNorm2d,
-                               MetaSequential, MetaLinear)
+from torchmeta.modules import (MetaModule, MetaConv2d, MetaSequential)
 from collections import OrderedDict
 
 import math
@@ -77,9 +76,6 @@ class Unet(MetaModule):
 
         final = self.final(up1, params=self.get_subdict(params, 'final'))
 
-        #final = torch.sigmoid(final)
-
-    
         return final
 
 
@@ -93,13 +89,7 @@ class unetConv2(MetaModule):
 
         def init_layers(m):
             if type(m) == MetaConv2d:
-                #torch.nn.init.xavier_uniform_(m.weight)
-                #n = m.kernel_size[0] * m.kernel_size[1] * m.in_channels # or out_channels like in https://discuss.pytorch.org/t/unet-implementation/426/23
-                #torch.nn.init.normal_(m.weight, mean = 0.0, std = math.sqrt(2.0/n)) # from UNet Paper
                 torch.nn.init.kaiming_uniform_(m.weight, nonlinearity='relu')
-            """elif isinstance(m, nn.BatchNorm2d):
-                m.weight.data.fill_(1)
-                m.bias.data.zero_()"""
 
         if fcn==True:
             self.double_conv = MetaSequential(OrderedDict([
@@ -122,7 +112,7 @@ class unetConv2(MetaModule):
             ('relu1', nn.ReLU(inplace=True))
             ]))
 
-        #if is_batchnorm:
+
         else:
             
             self.double_conv = MetaSequential(OrderedDict([
@@ -136,17 +126,7 @@ class unetConv2(MetaModule):
             #('dropout2', nn.Dropout(0.3))
             ]))
 
-        """else:
-            self.double_conv = MetaSequential(OrderedDict([
-            ('conv1', MetaConv2d(in_channels, out_channels, kernel_size=kernel_size, stride=stride, padding=padding)),
-            ('relu1', nn.ReLU(inplace=True)),
-            #('dropout1', nn.Dropout(0.3)),
-            ('conv2', MetaConv2d(out_channels, out_channels, kernel_size=kernel_size, stride=stride, padding=padding)),
-            ('relu2', nn.ReLU(inplace=True))
-            #('dropout2', nn.Dropout(0.3))
-            ]))"""
-
-        # use the modules apply function to recursively apply the initialization
+        # Use the module's apply function to recursively apply the initialization
         self.double_conv.apply(init_layers)
 
     def forward(self, inputs, params=None):
@@ -249,13 +229,8 @@ class ResUnetConv2(MetaModule):
 
         def init_layers(m):
             if type(m) == MetaConv2d:
-                #torch.nn.init.xavier_uniform_(m.weight)
-                #n = m.kernel_size[0] * m.kernel_size[1] * m.in_channels # or out_channels like in https://discuss.pytorch.org/t/unet-implementation/426/23
-                #torch.nn.init.normal_(m.weight, mean = 0.0, std = math.sqrt(2.0/n)) # from UNet Paper
                 torch.nn.init.kaiming_uniform_(m.weight, nonlinearity='relu')
-            """elif isinstance(m, nn.BatchNorm2d):
-                m.weight.data.fill_(1)
-                m.bias.data.zero_()"""
+
 
         if is_first:
 
@@ -287,9 +262,7 @@ class ResUnetConv2(MetaModule):
             #('dropout2', nn.Dropout(0.3))
             ]))
 
-
-
-        # use the modules apply function to recursively apply the initialization
+        # use the module's apply function to recursively apply the initialization
         self.double_conv.apply(init_layers)
 
     def forward(self, inputs, params_conv=None, params_add=None):
@@ -324,13 +297,6 @@ class ResUnetUp(MetaModule):
         return block_output
 
         
-        """if is_deconv:
-            #self.up = nn.ConvTranspose2d(in_size, out_size, kernel_size=2, stride=2)
-            self.up = MetaConvTranspose2d(in_size, out_size, kernel_size=2, stride=2)
-        else:
-            self.up = nn.UpsamplingBilinear2d(scale_factor=2)"""
-
-
 
 
 
@@ -366,8 +332,6 @@ class FCN8(MetaModule):
         self.conv5 = unetConv2(filters[3], filters[4], self.is_batchnorm,  device=device, padding=padding, fcn=True)
         self.maxpool5 = nn.MaxPool2d(kernel_size=2, stride=2, ceil_mode=True)
 
-        #self.conv6 = unetConv2(filters[4], filters[5], self.is_batchnorm,  device=device, padding=padding)
-        #self.maxpool6 = nn.MaxPool2d(kernel_size=2, stride=2, ceil_mode=True)
 
         self.center1 = unetConv2(filters[4], filters[4], self.is_batchnorm,  device=device, padding=padding, fcn_center=True)
         self.center2 = unetConv2(filters[4], n_classes, self.is_batchnorm,  device=device, padding=padding, fcn_center=True)
@@ -379,12 +343,6 @@ class FCN8(MetaModule):
 
         self.down3 = unetConv2(filters[2], n_classes, self.is_batchnorm,  device=device, padding=padding, fcn_center=True)
         self.maxpool3down = nn.MaxPool2d(kernel_size=2, stride=2, ceil_mode=True)
-        # up_center+down_4
-        # Upsampling
-        """self.up_concat4 = unetUp(filters[4], filters[3], self.is_deconv)
-        self.up_concat3 = unetUp(filters[3], filters[2], self.is_deconv)
-        self.up_concat2 = unetUp(filters[2], filters[1], self.is_deconv)
-        self.up_concat1 = unetUp(filters[1], filters[0], self.is_deconv)"""
 
         self.add1up = fcnUp(n_classes, n_classes, self.is_deconv)
 
@@ -414,31 +372,23 @@ class FCN8(MetaModule):
         center1 = self.center1(maxpool5, params=self.get_subdict(params, 'center1.double_conv'))
         center2 = self.center2(center1, params=self.get_subdict(params, 'center2.double_conv'))
 
-
         up_center = self.up_center(center2, inputs2=None, params=self.get_subdict(params, 'up_center.up'))
-
 
         down4 = self.down4(conv4, params=self.get_subdict(params, 'down4.double_conv'))
         down4 = self.maxpool4down(down4)
 
-
         add1 = down4+up_center
 
         down3 = self.down3(conv3, params=self.get_subdict(params, 'down3.double_conv'))
-
         down3 = self.maxpool3down(down3)
 
 
         add1_up = self.add1up(add1, None, params=self.get_subdict(params, 'add1up.up'))
-
         add2 = add1_up+down3
 
         up = self.up(add2, None, params=self.get_subdict(params, 'up.up'))
-
         up2 = self.up2(up, None, params=self.get_subdict(params, 'up2.up'))
         up3 = self.up3(up2, None, params=self.get_subdict(params, 'up3.up'))
-
-
     
         return up3
 
@@ -449,9 +399,7 @@ class fcnUp(MetaModule):
     """Upsampling modules"""
     def __init__(self, in_size, out_size, is_deconv):
         super(fcnUp, self).__init__()
-
-        #self.conv = unetConv2(in_size, out_size, is_batchnorm=True)
-        
+ 
         if is_deconv:
             #self.up = nn.ConvTranspose2d(in_size, out_size, kernel_size=2, stride=2)
             self.up = MetaConvTranspose2d(in_size, out_size, kernel_size=2, stride=2)
@@ -462,4 +410,3 @@ class fcnUp(MetaModule):
         if inputs2==None:
             inputs = self.up(inputs1, params=params)
             return inputs
-            #return self.conv(inputs, params=params_conv)

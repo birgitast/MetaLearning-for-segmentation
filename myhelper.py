@@ -1,20 +1,9 @@
 import warnings
 
-#from torchmeta.datasets import (Omniglot, MiniImagenet, TieredImagenet, CIFARFS,
-                                #CUB, DoubleMNIST, TripleMNIST, Pascal5i)
 from mypascal5i import Pascal5i
 from torchmeta.transforms import Categorical, ClassSplitter, Rotation, SegmentationPairTransform
-from torchvision.transforms import Compose, Resize, CenterCrop, ToTensor
 
-__all__ = [
-    'omniglot',
-    'miniimagenet',
-    'tieredimagenet',
-    'cifar_fs',
-    'cub',
-    'doublemnist',
-    'triplemnist'
-]
+
 
 def helper_with_default(klass, folder, shots, ways, shuffle=True,
                         test_shots=None, seed=None, defaults={}, **kwargs):

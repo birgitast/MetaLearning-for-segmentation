@@ -12,7 +12,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 
-from models import Unet
+from models import Unet, FCN8, ResUnet
 from utils import print_test_param, DiceLoss, dataloader_test
 
 from data import get_datasets
@@ -40,29 +40,18 @@ def main(args):
 
 
     dataset = 'pascal5i'
-    if 'fold' in config.keys():
-        fold = config['fold']
-    else:
-        fold=0
-    #dataset = 'mydata'
-    #fold=[7]
+    fold = config['fold']
+
+    steps = config['num_adaption_steps']
 
     padding = 1
-    """Not needed with transform = SegmentationPairTransformNorm(256)"""
-    """elif dataset=='mydata':
-        padding=2"""
-
 
     if 'feature_scale' in config.keys():
         model = Unet(feature_scale=config['feature_scale'], padding=padding)
     else:
         model = Unet(feature_scale=4, padding=padding)
 
-    
-    
-    print('fold: ', fold)
 
-    #print_test_param(model)
     # get datasets and load into meta learning format
     meta_train_dataset, meta_val_dataset, meta_test_dataset = get_datasets(dataset, data_path, config['num_ways'], config['num_shots'], config['num_shots_test'], fold=fold, download=False, augment=False)
 
@@ -73,23 +62,17 @@ def main(args):
                                                 num_workers=args.num_workers,
                                                 pin_memory=True)
 
-    
+
     print('num shots = ', config['num_shots'])
     print(f'Using device: {device}')
-
-    #meta_optimizer = torch.optim.Adam(model.parameters(), lr=config['meta_lr'])
-
-
 
     with open(config['model_path'], 'rb') as f:
         model.load_state_dict(torch.load(f, map_location=device))
     
-    #model.train(False)
-
 
     metalearner = ModelAgnosticMetaLearning(model,
                                             first_order=config['first_order'],
-                                            num_adaptation_steps=config['num_adaption_steps'],
+                                            num_adaptation_steps=steps,
                                             step_size=config['step_size'],
                                             loss_function=loss_function,
                                             device=device)
@@ -110,13 +93,6 @@ def main(args):
         
         val_ious = [x for x in ious if x>0.0]
         val_accs = [x for x in accuracies if x>0.0]
-        """print(results['mean_iou_per_label'])
-        print('macc: ', sum(val_accs)/len(val_accs))
-        print('mIoU: ', sum(val_ious)/len(val_ious))
-        print(results['mean_acc_per_label'])
-        print(results['mean_iou_per_label'])"""
-
-
 
 
         y_pos = np.arange(len(labels))
@@ -142,16 +118,6 @@ def main(args):
 
         plt.show()
 
-
-        #print_test_param(model)
-
-        """for batch in meta_val_dataloader:
-            _, _, train_labels = batch['train']
-            #label = train_labels
-            label = train_labels[0][0].item()
-            print('label: ', label)
-            break"""
-        
     
     # Save results
     dirname = os.path.dirname(config['model_path'])

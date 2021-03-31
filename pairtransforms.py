@@ -1,13 +1,12 @@
-import math
 import numbers
 import random
-import warnings
 from collections.abc import Sequence
 from typing import Tuple, List, Optional
 
 import torch
 from PIL import Image
 from torch import Tensor
+
 
 import numpy as np
 
@@ -20,37 +19,6 @@ import torchvision.transforms.functional as F
 
 
 """------------------------------------------ Methods for pairwise augmentation in segmentation problems --------------------------------------"""
-
-class ToTensor:
-    """Convert a ``PIL Image`` or ``numpy.ndarray`` to tensor. This transform does not support torchscript.
-
-    Converts a PIL Image or numpy.ndarray (H x W x C) in the range
-    [0, 255] to a torch.FloatTensor of shape (C x H x W) in the range [0.0, 1.0]
-    if the PIL Image belongs to one of the modes (L, LA, P, I, F, RGB, YCbCr, RGBA, CMYK, 1)
-    or if the numpy.ndarray has dtype = np.uint8
-
-    In the other cases, tensors are returned without scaling.
-
-    .. note::
-        Because the input image is scaled to [0.0, 1.0], this transformation should not be used when
-        transforming target image masks. See the `references`_ for implementing the transforms for image masks.
-
-    .. _references: https://github.com/pytorch/vision/tree/master/references/segmentation
-    """
-
-    def __call__(self, pic, mask):
-        """
-        Args:
-            pic (PIL Image or numpy.ndarray): Image to be converted to tensor.
-
-        Returns:
-            Tensor: Converted image.
-        """
-        return F.to_tensor(pic), F.to_tensor(mask)
-
-    def __repr__(self):
-        return self.__class__.__name__ + '()'
-
 
 
 class RandomHorizontalFlip(torch.nn.Module):
@@ -101,78 +69,6 @@ class RandomVerticalFlip(torch.nn.Module):
         return self.__class__.__name__ + '(p={})'.format(self.p)
 
 
-''' NOT WORKING YET
-class GaussianBlur(torch.nn.Module):
-    """Blurs image with randomly chosen Gaussian blur.
-    The image can be a PIL Image or a Tensor, in which case it is expected
-    to have [..., C, H, W] shape, where ... means an arbitrary number of leading
-    dimensions
-
-    Args:
-        kernel_size (int or sequence): Size of the Gaussian kernel.
-        sigma (float or tuple of float (min, max)): Standard deviation to be used for
-            creating kernel to perform blurring. If float, sigma is fixed. If it is tuple
-            of float (min, max), sigma is chosen uniformly at random to lie in the
-            given range.
-
-    Returns:
-        PIL Image or Tensor: Gaussian blurred version of the input image.
-
-    """
-
-    def __iter__(self):
-        return iter([GaussianBlur(kernel_size=self.kernel_size, sigma=self.sigma)])
-
-
-    def __init__(self, kernel_size, sigma=(0.1, 2.0)):
-        super().__init__()
-        self.kernel_size = _setup_size(kernel_size, "Kernel size should be a tuple/list of two integers")
-        for ks in self.kernel_size:
-            if ks <= 0 or ks % 2 == 0:
-                raise ValueError("Kernel size value should be an odd and positive number.")
-
-        if isinstance(sigma, numbers.Number):
-            if sigma <= 0:
-                raise ValueError("If sigma is a single number, it must be positive.")
-            sigma = (sigma, sigma)
-        elif isinstance(sigma, Sequence) and len(sigma) == 2:
-            if not 0. < sigma[0] <= sigma[1]:
-                raise ValueError("sigma values should be positive and of the form (min, max).")
-        else:
-            raise ValueError("sigma should be a single number or a list/tuple with length 2.")
-
-        self.sigma = sigma
-
-    @staticmethod
-    def get_params(sigma_min: float, sigma_max: float) -> float:
-        """Choose sigma for random gaussian blurring.
-
-        Args:
-            sigma_min (float): Minimum standard deviation that can be chosen for blurring kernel.
-            sigma_max (float): Maximum standard deviation that can be chosen for blurring kernel.
-
-        Returns:
-            float: Standard deviation to be passed to calculate kernel for gaussian blurring.
-        """
-        return torch.empty(1).uniform_(sigma_min, sigma_max).item()
-
-
-    def forward(self, img: Tensor, mask:Tensor) -> Tensor:
-        """
-        Args:
-            img (PIL Image or Tensor): image to be blurred.
-
-        Returns:
-            PIL Image or Tensor: Gaussian blurred image
-        """
-        sigma = self.get_params(self.sigma[0], self.sigma[1])
-        return F.gaussian_blur(img, self.kernel_size, [sigma, sigma]), F.gaussian_blur(mask, self.kernel_size, [sigma, sigma])
-
-
-    def __repr__(self):
-        s = '(kernel_size={}, '.format(self.kernel_size)
-        s += 'sigma={})'.format(self.sigma)
-        return self.__class__.__name__ + s'''
 
 
 class RandomGrayscale(torch.nn.Module):
@@ -200,13 +96,6 @@ class RandomGrayscale(torch.nn.Module):
         self.p = p
 
     def forward(self, img, mask):
-        """
-        Args:
-            img (PIL Image or Tensor): Image to be converted to grayscale.
-
-        Returns:
-            PIL Image or Tensor: Randomly grayscaled image.
-        """
         num_output_channels = _get_image_num_channels(img)
         if torch.rand(1) < self.p:
             return rgb_to_grayscale(img, num_output_channels=num_output_channels), mask
@@ -268,8 +157,11 @@ class RandomRotation(torch.nn.Module):
         Returns:
             float: angle parameter to be passed to ``rotate`` for random rotation.
         """
-        angle = float(torch.empty(1).uniform_(float(degrees[0]), float(degrees[1])).item())
-        return angle
+        # Rotation by angle between -degrees and + degrees:
+        #angle = float(torch.empty(1).uniform_(float(degrees[0]), float(degrees[1])).item())
+        #return angle
+        # Rotation by multiples of degrees:
+        return degrees[1]
 
 
     def forward(self, img, mask):
@@ -280,7 +172,9 @@ class RandomRotation(torch.nn.Module):
         Returns:
             PIL Image or Tensor: Rotated image.
         """
+        
         angle = self.get_params(self.degrees)
+        r = random.randint(1, int((360.0/angle))-1)
         return F.rotate(img, angle, self.resample, self.expand, self.center, self.fill), F.rotate(mask, angle, self.resample, self.expand, self.center, self.fill)
 
 

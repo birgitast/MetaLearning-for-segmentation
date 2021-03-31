@@ -1,21 +1,13 @@
 import torch
 from torchmeta.utils.data import BatchMetaDataLoader
-import torch.nn.functional as F
-
-import matplotlib
-matplotlib.use('TkAgg')
-import matplotlib.pyplot as plt
 
 from maml import ModelAgnosticMetaLearning
 from data import get_datasets
 from models import Unet, ResUnet, FCN8
-from utils import FocalLoss, BCEDiceFocalLoss, dataloader_test, print_test_param, plot_errors, plot_accuracy, plot_iou, visualize, show_random_data, DiceLoss
+from utils import FocalLoss, BCEDiceFocalLoss, plot_errors, plot_accuracy, plot_iou, DiceLoss
 
 import math, time
-
 import json, os, logging
-
-from collections import OrderedDict
 
 
 download_data = True # Download data to local file (won't download if already there)
@@ -23,12 +15,10 @@ bce_dice_focal = False # If True, adjusts y_lim in error plot
 augment = True # Use data augmentation
 
 
-#loss_function = torch.nn.NLLLoss()
 #loss_function = torch.nn.BCEWithLogitsLoss()
 loss_function = DiceLoss()
 
-
-"""doesn't work"""
+"""not working:"""
 #loss_function = torch.nn.CrossEntropyLoss()
 #loss_function = FocalLoss()
 #loss_function = BCEDiceFocalLoss()
@@ -66,7 +56,7 @@ def main(args):
     
 
 
-    # get datasets and load into meta learning format
+    # Get datasets and load into meta learning format
     meta_train_dataset, meta_val_dataset, _ = get_datasets(args.dataset, args.datafolder, args.num_ways, args.num_shots, args.num_shots_test, augment=augment, fold=args.fold, download=download_data)
 
     meta_train_dataloader = BatchMetaDataLoader(meta_train_dataset,
@@ -83,17 +73,17 @@ def main(args):
 
 
 
-    #show_random_data(meta_train_dataset)
-
+ 
+    # Define model
     model = Unet(device=device, feature_scale=args.feature_scale)  
     model = model.to(device) 
     print(f'Using device: {device}')
-    #model_path = '/home/birgit/MA/experiments/results/unet/base/base_model/model.th'
-    #with open(model_path, 'rb') as f:
-        #model.load_state_dict(torch.load(f, map_location=device))
 
+    # Define optimizer 
     meta_optimizer = torch.optim.Adam(model.parameters(), lr=args.meta_lr)#, weight_decay=1e-5)
     #meta_optimizer = torch.optim.RMSprop(model.parameters(), lr=learning_rate, momentum = 0.99)
+
+    # Define meta learner
     metalearner = ModelAgnosticMetaLearning(model,
                                             meta_optimizer,
                                             first_order=args.first_order,
@@ -105,7 +95,6 @@ def main(args):
 
     best_value = None
 
-    #dataloader_test(meta_train_dataloader, model)
 
 
     # Training loop
@@ -193,10 +182,6 @@ def main(args):
         meta_train_dataset.close()
         meta_val_dataset.close()
  
-
-
-
-
 
 
 

@@ -6,11 +6,13 @@ matplotlib.use('TkAgg')
 import matplotlib.pyplot as plt
 
 import numpy as np
-
 from PIL import Image
 
 from collections import OrderedDict
 from torchmeta.modules import MetaModule
+
+from torchvision.transforms import Compose, Resize, ToTensor, Normalize
+import PIL
 
 
 def compute_accuracy(logits, targets):
@@ -19,6 +21,7 @@ def compute_accuracy(logits, targets):
         _, predictions = torch.max(logits, dim=1)
         accuracy = torch.mean(predictions.eq(targets).float())
     return accuracy.item()
+
 
 def tensors_to_device(tensors, device=torch.device('cpu')):
     """Place a collection of tensors in a specific device"""
@@ -33,26 +36,12 @@ def tensors_to_device(tensors, device=torch.device('cpu')):
     else:
         raise NotImplementedError()
 
-class ToTensor1D(object):
-    """Convert a `numpy.ndarray` to tensor. Unlike `ToTensor` from torchvision,
-    this converts numpy arrays regardless of the number of dimensions.
-    Converts automatically the array to `float32`.
-    """
-    def __call__(self, array):
-        return torch.from_numpy(array.astype('float32'))
-
-    def __repr__(self):
-        return self.__class__.__name__ + '()'
-
-from torchvision.transforms import Compose, Resize, ToTensor, Normalize
-import PIL
-
 
 class SegmentationPairTransformNorm(object):
     """Transform both the image and its respective mask"""
-    # Normalization: imagenet normalization! may need to be adjusted, maybe Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)) 
+    # Normalization: imagenet normalization
     def __init__(self, target_size):
-        self.image_transform = Compose([Resize((target_size, target_size)), ToTensor()])#, Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])]) #Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])])
+        self.image_transform = Compose([Resize((target_size, target_size)), ToTensor()])#, Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])])
         self.mask_transform = Compose([Resize((target_size, target_size),
                                                interpolation=PIL.Image.NEAREST), ToTensor()])#, Normalize([0.5], [0.5])])
 
@@ -63,49 +52,13 @@ class SegmentationPairTransformNorm(object):
 
 
 
-def dataloader_test(dataloader, model=None):
-    """Test the dataloader:
-       - printing shape information 
-       - plotting image + mask (+ model output if a model is given)"""
-    for batch in dataloader:
-        train_inputs, train_targets, train_labels = batch['train']
-        print('Train inputs shape: {0}'.format(train_inputs.shape))    # (batchsize, no of shots, channels = 3 (RGB), h, w)
-        print('Train targets shape: {0}'.format(train_targets.shape))  # (batchsize, no of shots, channels = 1, h, w)
-        print('Train labels shape: {0}'.format(train_labels.shape))    # (batch size, no of shots)
-
-        test_inputs, test_targets, test_labels = batch['test']
-
-        label_idx = train_labels[0][0] - 6
-        #label = meta_train_dataset.dataset.labels[label_idx]
-        label = train_labels[0][0].item()
-        print('label: ', label)
-
-        visualize([train_inputs[0][0], train_targets[0][0]], 'label: {}'.format(label))
-        #plt.show()
-        plt.savefig('test.png')
-
-
-        if model:
-            # Model test:
-            seg_threshold=0.6
-            outputs = model(train_inputs[0])
-            print('Output shape: {0}'.format(outputs.shape))
-            output = outputs[0].detach()  
-            prob_map = torch.sigmoid(output)
-            mask = (prob_map > seg_threshold).float()
-
-            visualize([train_inputs[0][0], train_targets[0][0], mask])
-            #plt.show()
-            plt.savefig('test.png')
-        break
-
-
 def print_test_param(model):
     """Output one model parameter and its value"""
     for name, param in model.named_parameters():
         #if param.requires_grad:
         print(name, param.data)
         break
+
         
 def plot_accuracy(num_epochs, train_acc, val_acc, val_step_size, output_folder, save=True):
     """Plot training and validation accuracy over the given epochs"""
@@ -197,17 +150,6 @@ def show_random_data(meta_train_dataset):
 
 
 
-'''def load_random_samples(mask_path, jpeg_path):#, num_shots):
-    """Return a random image + mask pair from the whole dataset""" 
-    rnd_name = random.choice([x for x in os.listdir(mask_path) if os.path.isfile(os.path.join(mask_path, x))])
-    rnd_mask = Image.open(mask_path + '/' + rnd_name)
-    rnd_img = Image.open(jpeg_path + '/' + rnd_name[0:11]+'.jpg')
-    tensor_transform = SegmentationPairTransformNorm(256)
-    img, mask = tensor_transform(rnd_img, rnd_mask)
-    img = torch.unsqueeze(img, 0)
-
-    return img, mask'''
-
 
 def get_dice_score(pred, targets, smooth=1):
     """Return the dice score of a given prediction and the ground truth"""
@@ -225,21 +167,7 @@ def get_dice_score(pred, targets, smooth=1):
 
     return dice
 
-"""# get intersection over union
-def iou(prediction, target):
-    scores = []
-    for i in range(prediction.shape[0]):
-        '''lbl = labels.cpu().numpy().reshape(-1)
-        target = output.cpu().numpy().reshape(-1)
-        from sklearn.metrics import jaccard_similarity_score as jsc
-        iou_score = jsc(target,lbl)'''
 
-        intersection = np.logical_and(target[i], prediction[i]])
-        union = np.logical_or(target[i], prediction[i])
-        iou_score = np.sum(intersection) / np.sum(union)
-        scores.append(iou_score)
-
-    return np.mean(scores)"""
 
 # from https://github.com/kevinzakka/pytorch-goodies/blob/master/losses.py
 def jaccard_idx(true, logits, eps=1e-7):
@@ -289,28 +217,6 @@ class DiceLoss(torch.nn.Module):
         dice_score = get_dice_score(inputs, targets, smooth)
         
         return 1 - dice_score
-
-
-'''class DiceBCELoss(torch.nn.Module):
-    """Compute the Dice Binary Cross Entropy score between an image and target"""
-    def __init__(self, weight=None, size_average=True):
-        super(DiceBCELoss, self).__init__()
-
-    def forward(self, inputs, targets, smooth=1):
-        
-        # Comment out if your model contains a sigmoid or equivalent activation layer
-        inputs = torch.sigmoid(inputs)       
-        
-        # Flatten label and prediction tensors
-        inputs = inputs.view(-1)
-        targets = targets.view(-1)
-        
-        intersection = (inputs * targets).sum()                            
-        dice_loss = 1 - (2.*intersection + smooth)/(inputs.sum() + targets.sum() + smooth)  
-        BCE = torch.nn.BCELoss(inputs, targets, reduction='mean')
-        Dice_BCE = BCE + dice_loss
-        
-        return Dice_BCE'''
         
 
 
@@ -323,107 +229,11 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.autograd import Variable
 # I refered https://github.com/c0nn3r/RetinaNet/blob/master/focal_loss.py
-import torch
-
-import torch.nn as nn
-import torch.nn.functional as F
 
 from torch.autograd import Variable
 
 
-class FocalLoss(nn.Module):
-
-    def __init__(self, focusing_param=2, balance_param=0.25):
-        super(FocalLoss, self).__init__()
-
-        self.focusing_param = focusing_param
-        self.balance_param = balance_param
-
-    def forward(self, output, target):
-
-        cross_entropy = F.cross_entropy(output, target)
-        cross_entropy_log = torch.log(cross_entropy)
-        logpt = - F.cross_entropy(output, target)
-        pt    = torch.exp(logpt)
-
-        focal_loss = -((1 - pt) ** self.focusing_param) * logpt
-
-        balanced_focal_loss = self.balance_param * focal_loss
-
-        return balanced_focal_loss
-
-
-
-# from https://github.com/doiken23/pytorch_toolbox/blob/master/focalloss2d.py
-"""class FocalLoss2d(nn.Module):
-
-    def __init__(self, gamma=0, weight=None, size_average=True):
-        super(FocalLoss2d, self).__init__()
-
-        self.gamma = gamma
-        self.weight = weight
-        self.size_average = size_average
-
-    def forward(self, input, target):
-        if input.dim()>2:
-            input = input.contiguous().view(input.size(0), input.size(1), -1)
-            input = input.transpose(1,2)
-            input = input.contiguous().view(-1, input.size(2)).squeeze()
-        if target.dim()==4:
-            target = target.contiguous().view(target.size(0), target.size(1), -1)
-            target = target.transpose(1,2)
-            target = target.contiguous().view(-1, target.size(2)).squeeze()
-        elif target.dim()==3:
-            target = target.view(-1)
-        else:
-            target = target.view(-1, 1)
-
-        # compute the negative likelyhood
-        weight = Variable(self.weight)
-        logpt = -F.cross_entropy(input, target)
-        pt = torch.exp(logpt)
-
-        # compute the loss
-        loss = -((1-pt)**self.gamma) * logpt
-
-        # averaging (or not) loss
-        if self.size_average:
-            return loss.mean()
-        else:
-            return loss.sum()"""
-
-
-
-# 1) from https://www.kaggle.com/bigironsphere/loss-function-library-keras-pytorch
-#PyTorch
-"""
-ALPHA = 0.8
-GAMMA = 2
-import torch.nn.functional as F
-class FocalLoss(nn.Module):
-    def __init__(self, weight=None, size_average=True):
-        super(FocalLoss, self).__init__()
-
-    def forward(self, inputs, targets, alpha=ALPHA, gamma=GAMMA, smooth=1):
-        
-        #comment out if your model contains a sigmoid or equivalent activation layer
-        inputs = F.sigmoid(inputs)       
-        
-        #flatten label and prediction tensors
-        inputs = inputs.view(-1)
-        targets = targets.view(-1)
-        
-        #first compute binary cross-entropy 
-        BCE = F.binary_cross_entropy(inputs, targets, reduction='mean')
-        BCE_EXP = torch.exp(-BCE)
-        focal_loss = alpha * (1-BCE_EXP)**gamma * BCE
-                       
-        return focal_loss"""
-
-
-
-
-# 2) from https://github.com/achaiah/pywick/blob/master/pywick/losses.py
+# 1) from https://github.com/achaiah/pywick/blob/master/pywick/losses.py
 
 class FocalLoss(nn.Module):
     """
@@ -449,7 +259,7 @@ class FocalLoss(nn.Module):
 
 
 
-# 3) from https://github.com/achaiah/pywick/blob/master/pywick/losses.py
+# 2) from https://github.com/achaiah/pywick/blob/master/pywick/losses.py
 class BCEDiceFocalLoss(nn.Module):
     '''
         :param num_classes: number of classes
@@ -471,85 +281,3 @@ class BCEDiceFocalLoss(nn.Module):
         return self.weights[0] * self.bce(logits, targets) + self.weights[1] * self.dice(logits, targets) + self.weights[2] * self.focal(logits.unsqueeze(1), targets.unsqueeze(1))
 
 
-class SoftDiceLoss(nn.Module):
-    def __init__(self, smooth=1.0, **kwargs):
-        super(SoftDiceLoss, self).__init__()
-        self.smooth = smooth
-
-    def forward(self, logits, targets):
-        #print('logits: {}, targets: {}'.format(logits.size(), targets.size()))
-        num = targets.size(0)
-        probs = torch.sigmoid(logits)
-        m1 = probs.view(num, -1)
-        m2 = targets.view(num, -1)
-        intersection = (m1 * m2)
-
-        # smooth = 1.
-
-        score = 2. * (intersection.sum(1) + self.smooth) / (m1.sum(1) + m2.sum(1) + self.smooth)
-        score = 1 - score.sum() / num
-        return score
-
-
-
-
-import torch
-
-from collections import OrderedDict
-from torchmeta.modules import MetaModule
-
-
-def gradient_update_parameters(model,
-                               loss,
-                               params=None,
-                               step_size=0.5,
-                               first_order=False):
-    """Update of the meta-parameters with one step of gradient descent on the
-    loss function.
-    Parameters
-    ----------
-    model : `torchmeta.modules.MetaModule` instance
-        The model.
-    loss : `torch.Tensor` instance
-        The value of the inner-loss. This is the result of the training dataset
-        through the loss function.
-    params : `collections.OrderedDict` instance, optional
-        Dictionary containing the meta-parameters of the model. If `None`, then
-        the values stored in `model.meta_named_parameters()` are used. This is
-        useful for running multiple steps of gradient descent as the inner-loop.
-    step_size : int, `torch.Tensor`, or `collections.OrderedDict` instance (default: 0.5)
-        The step size in the gradient update. If an `OrderedDict`, then the
-        keys must match the keys in `params`.
-    first_order : bool (default: `False`)
-        If `True`, then the first order approximation of MAML is used.
-    Returns
-    -------
-    updated_params : `collections.OrderedDict` instance
-        Dictionary containing the updated meta-parameters of the model, with one
-        gradient update wrt. the inner-loss.
-    """
-    if not isinstance(model, MetaModule):
-        raise ValueError('The model must be an instance of `torchmeta.modules.'
-                         'MetaModule`, got `{0}`'.format(type(model)))
-
-    if params is None:
-        params = OrderedDict(model.meta_named_parameters())
-
-    grads = torch.autograd.grad(loss,
-                                params.values(),
-                                create_graph=not first_order,
-                                allow_unused=True)
-
-    updated_params = OrderedDict()
-
-    if isinstance(step_size, (dict, OrderedDict)):
-        for (name, param), grad in zip(params.items(), grads):
-
-            updated_params[name] = param - step_size[name] * grad
-
-    else:
-    
-        for (name, param), grad in zip(params.items(), grads):
-            updated_params[name] = param - step_size * grad
-
-    return updated_params
